@@ -1,0 +1,136 @@
+{
+  "type": "object",
+  "layout": "tabs",
+  "required": [
+    "datasetMode"
+  ],
+  "allOf": [
+    {
+      "title": "Liste de jeux de données",
+      "default": {
+        "datasetMode": "list"
+      },
+      "oneOf": [
+        {
+          "title" : "Lister les différentes couches",
+          "properties": {
+            "datasetMode": {
+              "type": "string",
+              "const": "list",
+              "title": "Action"
+            }
+          }
+        },
+        {
+          "title": "Créer des jeux de données éditables",
+          "required": [
+            "dataset"
+          ],
+          "properties": {
+            "datasetMode": {
+              "type": "string",
+              "const": "create",
+              "title": "Action"
+            },
+            "dataset": {
+              "type": "object",
+              "required": [
+                "prefix"
+              ],
+              "properties": {
+                "prefix": {
+                  "type": "string",
+                  "title": "Préfixe des noms des jeux de données",
+                  "description": "Les titres des jeux de données sont construits avec ce préfixe et le nom de la couche correspondante."
+                }
+              }
+            }
+          }
+        },
+        {
+          "title": "Mettre à jour des jeux de données",
+          "properties": {
+            "datasetMode": {
+              "type": "string",
+              "const": "update",
+              "title": "Action"
+            },
+            "datasets": {
+              "type": "array",
+              "title": "Jeux à mettre à jour",
+              "items": {
+                "type" : "object",
+                "required": [
+                  "dataset",
+                  "idLayer"
+                ],
+                "properties": {
+                  "dataset": {
+                    "type": "object",
+                    "title": "Jeu de données existant",
+                    "properties": {
+                      "id": {
+                        "type": "string",
+                        "title": "Identifiant"
+                      },
+                      "href": {
+                        "type": "string",
+                        "title": "URL"
+                      },
+                      "title": {
+                        "type": "string",
+                        "title": "Titre"
+                      }
+                    },
+                    "layout": {
+                      "getItems": {
+                        "url": "${context.dataFairUrl}/api/v1/datasets?q={q}&select=id,title&${context.ownerFilter}",
+                        "itemsResults": "data.results",
+                        "itemTitle": "item.title",
+                        "itemKey": "item.id"
+                      }
+                    }
+                  },
+                  "idLayer": {
+                    "type": "integer",
+                    "title": "Numéro de la couche",
+                    "minimum": 1
+                  },
+                  "forceUpdate": {
+                    "type" : "boolean",
+                    "title" : "Forcer la mise à jour du schéma"
+                  }
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "title": "Paramètres",
+      "required": [
+        "url"
+      ],
+      "properties": {
+        "url": {
+          "title": "URL source",
+          "type": "string",
+          "description": "Les protocoles supportés sont HTTP et HTTPS, les formats supportés sont .zip et .xlsx."
+        },
+        "idsLayers": {
+          "type": "array",
+          "title": "Couches à extraire",
+          "items": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "description": "Les nombres à indiquer correspondent aux numéros des couches à extraire.",
+          "layout": {
+            "if" : "parent.parent.data.datasetMode === 'create'"
+          }
+        }
+      }
+    }
+  ]
+}
