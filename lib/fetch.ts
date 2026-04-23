@@ -4,7 +4,7 @@ import type { AxiosRequestConfig } from 'axios'
 import fs from 'fs-extra'
 import path from 'path'
 
-import type { GpkgProcessingContext } from './context.ts'
+import type { XlsxProcessingContext } from './context.ts'
 
 /**
  * Allows you to download a file using the HTTP protocol
@@ -13,7 +13,7 @@ import type { GpkgProcessingContext } from './context.ts'
  * @param axios             Server for API requests
  * @returns Name of extracted file
  */
-export const fetchHTTP = async (processingConfig: GpkgProcessingContext['processingConfig'], tmpFile: string, axios: GpkgProcessingContext['axios']) => {
+export const fetchHTTP = async (processingConfig: XlsxProcessingContext['processingConfig'], tmpFile: string, axios: XlsxProcessingContext['axios']) => {
   const opts: AxiosRequestConfig = { responseType: 'stream', maxRedirects: 4 }
 
   // File retrieval and download

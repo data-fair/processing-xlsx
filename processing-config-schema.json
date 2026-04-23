@@ -149,7 +149,7 @@
         "url": {
           "title": "URL source",
           "type": "string",
-          "description": "Les protocoles supportés sont HTTP et HTTPS, les formats supportés sont .zip et .gpkg."
+          "description": "Les protocoles supportés sont HTTP et HTTPS, les formats supportés sont .zip et .xlsx."
         },
         "idsLayers": {
           "type": "array",

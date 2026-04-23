@@ -1,7 +1,7 @@
 {
-  "name": "@data-fair/processing-gpkg",
+  "name": "@data-fair/processing-xlsx",
   "version": "0.0.0",
-  "description": "Create datasets from a geopackage (gpkg) file ",
+  "description": "Create datasets from a excel (xlsx) file ",
   "main": "index.ts",
   "type": "module",
   "scripts": {
@@ -17,7 +17,7 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/data-fair/processing-gpkg.git"
+    "url": "git+https://github.com/data-fair/processing-xlsx.git"
   },
   "keywords": [
     "data-fair-processings-plugin"
@@ -25,9 +25,9 @@
   "author": "Alban Mouton <alban.mouton@gmail.com>",
   "license": "MIT",
   "bugs": {
-    "url": "https://github.com/data-fair/processing-gpkg/issues"
+    "url": "https://github.com/data-fair/processing-xlsx/issues"
   },
-  "homepage": "https://github.com/data-fair/processing-gpkg#readme",
+  "homepage": "https://github.com/data-fair/processing-xlsx#readme",
   "devDependencies": {
     "@commitlint/cli": "^19.8.1",
     "@commitlint/config-conventional": "^19.8.1",

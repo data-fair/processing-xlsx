@@ -1,6 +1,6 @@
 import { spawn } from 'child_process'
 
-import type { GpkgProcessingContext } from './context.ts'
+import type { XlsxProcessingContext } from './context.ts'
 
 /**
  * Number of lines to send per data transmission
@@ -19,7 +19,7 @@ const BATCH_SIZE = 1000
  * @param isStopped           Function allowing the program to stop if requested
  * @param datasetName         Dataset name, empty by default (use for update)
  */
-export const streamLayerToDataset = async (idStream : number, tmpFile: string, layerName: string, layerFeatureCount: number, datasetId: string, axios : GpkgProcessingContext['axios'], log : GpkgProcessingContext['log'], isStopped: () => boolean, datasetName : string = '') => {
+export const streamLayerToDataset = async (idStream : number, tmpFile: string, layerName: string, layerFeatureCount: number, datasetId: string, axios : XlsxProcessingContext['axios'], log : XlsxProcessingContext['log'], isStopped: () => boolean, datasetName : string = '') => {
   // Table containing the data being sent
   const batch: object[] = []
   let total = 0 // Data sent counter

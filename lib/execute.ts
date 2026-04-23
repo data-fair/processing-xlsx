@@ -7,7 +7,7 @@ import fs from 'fs-extra'
 import path from 'path'
 import FormData from 'form-data'
 
-import type { GpkgProcessingContext } from './context.ts'
+import type { XlsxProcessingContext } from './context.ts'
 import { fetchHTTP } from './fetch.ts'
 import { streamLayerToDataset } from './stream-layer.ts'
 import { createTmpFile } from './tmp-file.ts'
@@ -55,14 +55,14 @@ export const run: RunFunction<ProcessingConfig> = async (context) => {
 
 /**
  * Allows you to download the file and place it in a temporary folder for later processing.
- * We only process .zip and .gpkg formats; any other format will result in an error.
+ * We only process .zip and .xlsx formats; any other format will result in an error.
  * @param processingConfig  Processing configuration, obtained from the form data (processing-config-schema.json)
  * @param tmpDir            Directory where to download the file
  * @param axios             Server for API requests
  * @param log               Log system that is displayed on the user interface
  * @returns Full path of the file to be processed
  */
-const download = async ({ processingConfig, tmpDir, axios, log } : GpkgProcessingContext) => {
+const download = async ({ processingConfig, tmpDir, axios, log } : XlsxProcessingContext) => {
   await fs.ensureDir(tmpDir)
 
   await log.step('Téléchargement du fichier')
@@ -84,7 +84,7 @@ const download = async ({ processingConfig, tmpDir, axios, log } : GpkgProcessin
   await log.info(`Le fichier a été téléchargé (${filename})`)
   if (shouldBeStopped) return
 
-  let gpkgFilename
+  let xlsxFilename
 
   // Check the file format
   if (filename.toLowerCase().endsWith('.zip')) {
@@ -93,34 +93,34 @@ const download = async ({ processingConfig, tmpDir, axios, log } : GpkgProcessin
     // Unzip
     await runCommand('unzip', ['-j', tmpFile, '-d', `${tmpFile}-dezip`])
 
-    // We are looking for the .gpkg files contained in the .zip file.
-    const filesGpkg: string[] = []
+    // We are looking for the .xlsx files contained in the .zip file.
+    const filesXlsx: string[] = []
     const files = await fs.readdir(`${tmpFile}-dezip`)
     for (const file of files) {
-      if (file.toLowerCase().endsWith('.gpkg')) {
-        filesGpkg.push(`${tmpFile}-dezip/${file}`)
+      if (file.toLowerCase().endsWith('.xlsx')) {
+        filesXlsx.push(`${tmpFile}-dezip/${file}`)
       }
     }
 
-    const nbFiles = filesGpkg.length
+    const nbFiles = filesXlsx.length
     if (shouldBeStopped) return
 
     if (nbFiles <= 0) {
-      throw new Error('Il n\'y a pas de fichiers .gpkg à traiter dans ce zip.')
+      throw new Error('Il n\'y a pas de fichiers .xlsx à traiter dans ce zip.')
     } else {
-      // We keep the first .gpkg file we find, we ignore the others
-      gpkgFilename = path.basename(filesGpkg[0])
-      tmpFile = filesGpkg[0]
+      // We keep the first .xlsx file we find, we ignore the others
+      xlsxFilename = path.basename(filesXlsx[0])
+      tmpFile = filesXlsx[0]
     }
-  } else if (filename.toLowerCase().endsWith('.gpkg')) {
-    await log.info('Récupération du fichier gpkg')
-    gpkgFilename = filename
+  } else if (filename.toLowerCase().endsWith('.xlsx')) {
+    await log.info('Récupération du fichier xlsx')
+    xlsxFilename = filename
   } else {
     await log.info('Le format n\'est pas pris en charge')
     throw new Error('Format non pris en charge')
   }
 
-  await log.info(`Traitement du fichier ${gpkgFilename}`)
+  await log.info(`Traitement du fichier ${xlsxFilename}`)
 
   return tmpFile
 }
@@ -131,7 +131,7 @@ const download = async ({ processingConfig, tmpDir, axios, log } : GpkgProcessin
  * @param tmpFile   Full path of the file to be processed
  * @returns Dictionary of available layer structures (id: {name, fields, featureCount})
  */
-const extraction = async ({ log }: GpkgProcessingContext, tmpFile : string) => {
+const extraction = async ({ log }: XlsxProcessingContext, tmpFile : string) => {
   await log.step('Récupération de la structure des données')
 
   // Display layers
@@ -202,7 +202,7 @@ const extraction = async ({ log }: GpkgProcessingContext, tmpFile : string) => {
  * @param tmpFile           Full path of the file to be processed
  * @returns   A list of objects associating layers and datasets, or nothing at all to stop the program
  */
-const createDatasets = async ({ processingConfig, processingId, axios, tmpDir, log, ws } : GpkgProcessingContext, layersFieldList: LayersFieldList, tmpFile: string) => {
+const createDatasets = async ({ processingConfig, processingId, axios, tmpDir, log, ws } : XlsxProcessingContext, layersFieldList: LayersFieldList, tmpFile: string) => {
   await log.step('Construction des jeux de données')
 
   // If there are no layers to extract, we stop here to simplify the display of logs on the interface.
@@ -296,7 +296,7 @@ const createDatasets = async ({ processingConfig, processingId, axios, tmpDir, l
  * @param tmpFile           Full path of the file to be processed
  * @returns   Returns nothing, used to stop the program
  */
-const updateDatasets = async ({ processingConfig, axios, tmpDir, log, ws } : GpkgProcessingContext, layersFieldList: LayersFieldList, tmpFile: string) => {
+const updateDatasets = async ({ processingConfig, axios, tmpDir, log, ws } : XlsxProcessingContext, layersFieldList: LayersFieldList, tmpFile: string) => {
   await log.step('Mise à jour des jeux de données')
 
   // If there are no updates to extract, we stop here to simplify the display of logs on the interface.

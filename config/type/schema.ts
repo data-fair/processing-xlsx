@@ -1,5 +1,5 @@
 export default {
-  $id: 'https://github.com/data-fair/processings-gpkg/config',
+  $id: 'https://github.com/data-fair/processings-xlsx/config',
   'x-exports': ['types', 'validate'],
   type: 'object',
   title: 'Config',
