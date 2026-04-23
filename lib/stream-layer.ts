@@ -1,7 +1,6 @@
-import type { LogFunctions } from '@data-fair/lib-common-types/processings.js'
-import type { AxiosInstance } from 'axios'
-
 import { spawn } from 'child_process'
+
+import type { GpkgProcessingContext } from './context.ts'
 
 /**
  * Number of lines to send per data transmission
@@ -20,10 +19,11 @@ const BATCH_SIZE = 1000
  * @param isStopped           Function allowing the program to stop if requested
  * @param datasetName         Dataset name, empty by default (use for update)
  */
-export const streamLayerToDataset = async (idStream : number, tmpFile: string, layerName: string, layerFeatureCount: number, datasetId: string, axios : AxiosInstance, log : LogFunctions, isStopped: () => boolean, datasetName : string = '') => {
+export const streamLayerToDataset = async (idStream : number, tmpFile: string, layerName: string, layerFeatureCount: number, datasetId: string, axios : GpkgProcessingContext['axios'], log : GpkgProcessingContext['log'], isStopped: () => boolean, datasetName : string = '') => {
   // Table containing the data being sent
   const batch: object[] = []
   let total = 0 // Data sent counter
+  let corrupted = 0
 
   const progressName = `${idStream}. Envoi des données ${datasetName.length > 0 ? `- ${datasetName} ` : ''}- ${layerName}`
   await log.task(progressName)
@@ -41,6 +41,7 @@ export const streamLayerToDataset = async (idStream : number, tmpFile: string, l
 
   // Launch a child process to retrieve the data
   // -f GeoJSONSeq : Output format, one JSON feature per line
+  // !! We don't use `runCommand` here for optimization reasons! We load and unload the data little by little rather than all at once
   const proc = spawn('ogr2ogr', ['-f', 'GeoJSONSeq', '/vsistdout/', tmpFile, layerName])
 
   // Creating listeners to stop the child process, retrieve its error outputs, and system errors
@@ -62,7 +63,11 @@ export const streamLayerToDataset = async (idStream : number, tmpFile: string, l
 
   // Analysis chunk by chunk; a chunk corresponds to a piece of data, not necessarily a complete line
   for await (const chunk of proc.stdout) {
-    if (isStopped()) return
+    if (isStopped()) {
+      proc.kill()
+      await procClosed
+      return
+    }
 
     // Text accumulation
     textBuffer += chunk.toString()
@@ -76,9 +81,16 @@ export const streamLayerToDataset = async (idStream : number, tmpFile: string, l
       try {
         const feature = JSON.parse(line)
 
-        // We only keep the properties, the data recorded by column
-        if (!feature.properties) continue
-        batch.push(feature.properties)
+        // We only keep the properties, the data recorded by column, and the geometry
+        if (!feature.properties || !feature.geometry) {
+          corrupted += 1
+          continue
+        }
+
+        batch.push({
+          ...feature.properties,
+          geometry: JSON.stringify(feature.geometry)
+        })
 
         // If the number of lines to be sent exceeds the limit, they are sent.
         if (batch.length >= BATCH_SIZE) {
@@ -96,7 +108,12 @@ export const streamLayerToDataset = async (idStream : number, tmpFile: string, l
   if (textBuffer.trim()) {
     try {
       const feature = JSON.parse(textBuffer)
-      if (feature.properties) batch.push(feature.properties)
+      if (feature.properties && feature.geometry) {
+        batch.push({
+          ...feature.properties,
+          geometry: JSON.stringify(feature.geometry)
+        })
+      }
     } catch {
       await log.debug('Buffer résiduel non parseable, ignoré')
     }
@@ -110,6 +127,10 @@ export const streamLayerToDataset = async (idStream : number, tmpFile: string, l
   const exitCode = await procClosed
   if (exitCode !== 0) {
     const stderr = Buffer.concat(stderrChunks).toString()
-    throw new Error(`ogr2ogr exited with code ${exitCode}: ${stderr}`)
+    throw new Error(`ogr2ogr en échec avec le code ${exitCode}: ${stderr}`)
+  }
+
+  if (corrupted > 0) {
+    await log.warning(`${corrupted} lignes sont mal formées, elles ont été ignorées`)
   }
 }

@@ -22,7 +22,7 @@
           }
         },
         {
-          "title": "Créer des jeux de données éditables",
+          "title": "Créer des jeux de données",
           "required": [
             "dataset"
           ],
@@ -38,6 +38,11 @@
                 "prefix"
               ],
               "properties": {
+                "editableCreate": {
+                  "type": "boolean",
+                  "title": "Jeux de données éditables",
+                  "description": "Par défaut, on crée des jeux de données fichier, moins coûteux en mémoire, mais difficilement actualisables"
+                },
                 "prefix": {
                   "type": "string",
                   "title": "Préfixe des noms des jeux de données",
@@ -55,11 +60,39 @@
               "const": "update",
               "title": "Action"
             },
+            "editableUpdate": {
+              "type": "boolean",
+              "title": "Jeux de données éditables",
+              "description": "Par défaut, on met à jour des jeux de données fichier"
+            },
             "datasets": {
               "type": "array",
               "title": "Jeux à mettre à jour",
+              "layout": {
+                "listEditMode": "inline"
+              },
               "items": {
                 "type" : "object",
+                  "layout" : [
+                    {
+                      "children": [
+                        "dataset"
+                      ],
+                      "cols": 5
+                    },
+                    {
+                      "children": [
+                        "idLayer"
+                      ],
+                      "cols": 3
+                    },
+                    {
+                      "children": [
+                        "forceUpdate"
+                      ],
+                      "cols": 3
+                    }
+                  ],
                 "required": [
                   "dataset",
                   "idLayer"
@@ -84,7 +117,7 @@
                     },
                     "layout": {
                       "getItems": {
-                        "url": "${context.dataFairUrl}/api/v1/datasets?q={q}&select=id,title&${context.ownerFilter}",
+                        "url": "${context.dataFairUrl}/api/v1/datasets?q={q}&select=id,title&${context.ownerFilter}&${parent.parent.parent.parent.data.editableUpdate === true ? 'rest' : 'file'}=true",
                         "itemsResults": "data.results",
                         "itemTitle": "item.title",
                         "itemKey": "item.id"
@@ -116,7 +149,7 @@
         "url": {
           "title": "URL source",
           "type": "string",
-          "description": "Les protocoles supportés sont HTTP et HTTPS, les formats supportés sont .zip et .xlsx."
+          "description": "Les protocoles supportés sont HTTP et HTTPS, les formats supportés sont .zip et .gpkg."
         },
         "idsLayers": {
           "type": "array",

@@ -1,7 +1,7 @@
 {
-  "name": "@data-fair/processing-xlsx",
+  "name": "@data-fair/processing-gpkg",
   "version": "0.0.0",
-  "description": "Create datasets from a geopackage (xlsx) file. Layers are selected by specifying them.",
+  "description": "Create datasets from a geopackage (gpkg) file ",
   "main": "index.ts",
   "type": "module",
   "scripts": {
@@ -17,7 +17,7 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/data-fair/processing-xlsx.git"
+    "url": "git+https://github.com/data-fair/processing-gpkg.git"
   },
   "keywords": [
     "data-fair-processings-plugin"
@@ -25,18 +25,17 @@
   "author": "Alban Mouton <alban.mouton@gmail.com>",
   "license": "MIT",
   "bugs": {
-    "url": "https://github.com/data-fair/processing-xlsx/issues"
+    "url": "https://github.com/data-fair/processing-gpkg/issues"
   },
-  "homepage": "https://github.com/data-fair/processing-xlsx#readme",
+  "homepage": "https://github.com/data-fair/processing-gpkg#readme",
   "devDependencies": {
     "@commitlint/cli": "^19.8.1",
     "@commitlint/config-conventional": "^19.8.1",
-    "@data-fair/lib-common-types": "^1.10.1",
+    "@data-fair/lib-common-types": "^1.20.6",
     "@data-fair/lib-processing-dev": "^0.2.0",
     "@data-fair/lib-types-builder": "^1.7.0",
-    "@types/find": "^0.2.4",
+    "@types/debug": "^4.1.13",
     "@types/fs-extra": "^11.0.4",
-    "@types/unzipper": "^0.10.11",
     "config": "^4.4.1",
     "debug": "^4.4.0",
     "eslint": "^9.26.0",
@@ -55,9 +54,7 @@
     "@data-fair/lib-processing-dev": "../../lib/packages/processing-dev"
   },
   "dependencies": {
-    "find": "^0.3.0",
-    "fs-extra": "^11.3.4",
-    "ogr2ogr": "^6.0.1",
-    "unzipper": "^0.12.3"
+    "@data-fair/lib-utils": "^1.10.2",
+    "fs-extra": "^11.3.4"
   }
 }
