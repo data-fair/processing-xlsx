@@ -5,11 +5,11 @@ import { formatBytes } from '@data-fair/lib-utils/format/bytes.js'
 import util from 'util'
 import fs from 'fs-extra'
 import path from 'path'
+import Excel from 'exceljs'
 import FormData from 'form-data'
 
 import type { XlsxProcessingContext } from './context.ts'
 import { fetchHTTP } from './fetch.ts'
-import { streamLayerToDataset } from './stream-layer.ts'
 import { createTmpFile } from './tmp-file.ts'
 import { runCommand } from './spawn-process.ts'
 
@@ -20,8 +20,8 @@ let shouldBeStopped = false
 
 export const stop: () => Promise<void> = async () => { shouldBeStopped = true }
 
-type LayersFieldList = {
-  [idLayer: number]: { name: string, fields: any[], featureCount: number }
+type SheetsList = {
+  [idSheet: number]: { name: string, featureCount: number }
 }
 
 /**
@@ -37,17 +37,17 @@ export const run: RunFunction<ProcessingConfig> = async (context) => {
 
   if (shouldBeStopped) return
   if (!tmpFile) return
-  const layersFieldList = await extraction(context, tmpFile)
+  const sheetsList = await extraction(context, tmpFile)
 
   if (shouldBeStopped) return
-  if (!layersFieldList) return
+  if (!sheetsList) return
 
   if (processingConfig.datasetMode === 'create') {
-    const updateConfig = await createDatasets(context, layersFieldList, tmpFile)
+    const updateConfig = await createDatasets(context, sheetsList, tmpFile)
 
-    if (updateConfig?.length) await patchConfig({ datasetMode: 'update', datasets: updateConfig, editableUpdate: processingConfig.dataset.editableCreate })
+    if (updateConfig?.length) await patchConfig({ datasetMode: 'update', datasets: updateConfig })
   } else if (processingConfig.datasetMode === 'update') {
-    await updateDatasets(context, layersFieldList, tmpFile)
+    await updateDatasets(context, sheetsList, tmpFile)
   } else {
     await patchConfig({ datasetMode: 'create', dataset: { prefix: '' } })
   }
@@ -126,149 +126,86 @@ const download = async ({ processingConfig, tmpDir, axios, log } : XlsxProcessin
 }
 
 /**
- * Allows you to retrieve the layers of a file and organize their structure
+ * Allows you to retrieve the sheets of a file and organize their structure
  * @param log       Log system that is displayed on the user interface
  * @param tmpFile   Full path of the file to be processed
- * @returns Dictionary of available layer structures (id: {name, fields, featureCount})
+ * @returns Dictionary of available sheet structures (id: {name, fields, featureCount})
  */
 const extraction = async ({ log }: XlsxProcessingContext, tmpFile : string) => {
   await log.step('Récupération de la structure des données')
 
-  // Display layers
-  const proc = await runCommand('ogrinfo', ['-json', tmpFile])
-  if (shouldBeStopped) return
+  // Display sheets
+  const workbook = new Excel.Workbook()
+  await workbook.xlsx.readFile(tmpFile)
 
-  const result = proc.stdout
-  const jsonStructure = JSON.parse(result)
-  if (shouldBeStopped) return
+  const sheetsList: SheetsList = []
 
-  const layers = jsonStructure.layers
-  const layersFieldList: LayersFieldList = {}
+  for (const sheet of workbook.worksheets) {
+    // await log.info(`${sheet.columns}`)
 
-  for (let i = 0; i < layers.length; i++) {
-    for (let j = 0; j < layers[i].fields.length; j++) {
-      if (shouldBeStopped) return
-
-      if (!layers[i].fields[j].type) {
-        throw new Error(`Pas de type pour ${layers[i].fields[j].name}`)
-      }
-
-      let typeCorrect = layers[i].fields[j].type.toLowerCase()
-
-      // Check the types
-      if (typeCorrect.includes('integer')) {
-        typeCorrect = 'integer'
-      }
-
-      if (typeCorrect.includes('real')) {
-        typeCorrect = 'number'
-      }
-
-      layers[i].fields[j] = {
-        ...layers[i].fields[j],
-        key: layers[i].fields[j].name,
-        type: typeCorrect,
-      }
+    if (sheet.columnCount <= 0) {
+      await log.warning(`Feuille ${sheet.id} - ${sheet.name} - Pas d'attributs, INUTILISABLE`)
+    } else {
+      await log.info(`Feuille ${sheet.id} - ${sheet.name} - ${sheet.actualRowCount - 1} lignes`)
+      sheetsList[sheet.id] = { name: sheet.name, featureCount: sheet.actualRowCount - 1 }
     }
-
-    // Adding geometries
-    layers[i].fields.push({
-      title: 'geometry',
-      name: 'geometry',
-      key: 'geometry',
-      type: 'string',
-      'x-refersTo': 'https://purl.org/geojson/vocab#geometry',
-      'x-capabilities': {
-        textAgg: false
-      }
-    })
-
-    await log.info(`Couche ${i + 1} - ${layers[i].name} - ${layers[i].featureCount} lignes`)
-    layersFieldList[i + 1] = { name: layers[i].name, fields: layers[i].fields, featureCount: layers[i].featureCount }
   }
 
-  return layersFieldList
+  return sheetsList
 }
 
 /**
- * Allows you to create the requested layer datasets
+ * Allows you to create the requested sheet datasets
  * @param processingConfig  Processing configuration, obtained from the form data (processing-config-schema.json)
  * @param processingId      Identifier of the processing currently in use
  * @param axios             Server for API requests
  * @param tmpDir            Directory where to download temporary files
  * @param log               Log system that is displayed on the user interface
  * @param ws                Data Fair's Websocket allows retrieving the dataset response.
- * @param layersFieldList   Dictionary containing the structure of the file's layers (id: {name, fields, featureCount})
+ * @param sheetsList   Dictionary containing the structure of the file's sheets (id: {name, fields, featureCount})
  * @param tmpFile           Full path of the file to be processed
- * @returns   A list of objects associating layers and datasets, or nothing at all to stop the program
+ * @returns   A list of objects associating sheets and datasets, or nothing at all to stop the program
  */
-const createDatasets = async ({ processingConfig, processingId, axios, tmpDir, log, ws } : XlsxProcessingContext, layersFieldList: LayersFieldList, tmpFile: string) => {
+const createDatasets = async ({ processingConfig, processingId, axios, tmpDir, log, ws } : XlsxProcessingContext, sheetsList: SheetsList, tmpFile: string) => {
   await log.step('Construction des jeux de données')
 
-  // If there are no layers to extract, we stop here to simplify the display of logs on the interface.
-  if (!processingConfig.idsLayers || processingConfig.idsLayers.length <= 0) {
-    await log.info('Pas de couches renseignées')
+  // If there are no sheets to extract, we stop here to simplify the display of logs on the interface.
+  if (!processingConfig.idsSheets || processingConfig.idsSheets.length <= 0) {
+    await log.info('Pas de feuilles renseignées')
     return
   }
 
   const updateConfig = []
-  let idStream = 0
 
-  for (const idLayer of processingConfig.idsLayers) {
+  for (const idSheet of processingConfig.idsSheets) {
     if (shouldBeStopped) return
 
-    if (!(idLayer in layersFieldList)) {
-      await log.warning(`La couche ${idLayer} n'est pas présente dans les couches disponibles`)
+    if (!(idSheet in sheetsList)) {
+      await log.warning(`La feuille ${idSheet} n'est pas présente dans les feuilles disponibles`)
     } else {
-      await log.info(`Création du jeu de données pour la couche ${idLayer} - ${layersFieldList[idLayer].name}`)
+      await log.info(`Création du jeu de données pour la feuille ${idSheet} - ${sheetsList[idSheet].name}`)
 
-      const fields = layersFieldList[idLayer].fields
+      const tmpFileXLSX = await createTmpFile(tmpDir, tmpFile, sheetsList[idSheet].name, log, () => shouldBeStopped)
+      if (!tmpFileXLSX) return
 
-      // Display names and types of the fields for debug
-      await log.debug(`   Champs : ${fields.map(f => `${f.key} (${f.type})`).join(', ')}`)
+      const formData = new FormData()
+      formData.append('title', `${processingConfig.dataset.prefix}-${sheetsList[idSheet].name}`)
+      formData.append('file', await fs.createReadStream(tmpFileXLSX), { filename: path.parse(tmpFileXLSX).base })
+      formData.getLength = util.promisify(formData.getLength)
+      const contentLength = await formData.getLength()
+      await log.info(`Chargement de ${formatBytes(contentLength!)}`)
 
-      let dataset
+      if (shouldBeStopped) return
 
-      if (processingConfig.dataset.editableCreate) {
-        // Create the dataset, empty
-        dataset = (await axios.post('api/v1/datasets', {
-          title: `${processingConfig.dataset.prefix}-${layersFieldList[idLayer].name}`,
-          description: '',
-          isRest: true,
-          schema: fields,
-          extras: { processingId }
-        })).data
-        await log.info(`   Jeu de données créé, id="${dataset.id}", titre="${dataset.title}"`)
-
-        if (shouldBeStopped) return
-
-        // Dataset population
-        idStream += 1
-        await streamLayerToDataset(idStream, tmpFile, layersFieldList[idLayer].name, layersFieldList[idLayer].featureCount, dataset.id, axios, log, () => shouldBeStopped)
-      } else {
-        const tmpFileGeoJSON = await createTmpFile(tmpDir, tmpFile, layersFieldList[idLayer].name, log, () => shouldBeStopped)
-        if (!tmpFileGeoJSON) return
-
-        const formData = new FormData()
-        formData.append('schema', JSON.stringify(fields))
-        formData.append('title', `${processingConfig.dataset.prefix}-${layersFieldList[idLayer].name}`)
-        formData.append('file', await fs.createReadStream(tmpFileGeoJSON), { filename: path.parse(tmpFileGeoJSON).base })
-        formData.getLength = util.promisify(formData.getLength)
-        const contentLength = await formData.getLength()
-        await log.info(`Chargement de ${formatBytes(contentLength!)}`)
-
-        if (shouldBeStopped) return
-
-        dataset = (await axios({
-          method: 'post',
-          url: 'api/v1/datasets',
-          data: formData,
-          maxContentLength: Infinity,
-          maxBodyLength: Infinity,
-          headers: { ...formData.getHeaders(), 'content-length': contentLength }
-        })).data
-        await log.info(`   Jeu de données créé, id="${dataset.id}", titre="${dataset.title}"`)
-      }
+      const dataset = (await axios({
+        method: 'post',
+        url: 'api/v1/datasets',
+        data: formData,
+        maxContentLength: Infinity,
+        maxBodyLength: Infinity,
+        headers: { ...formData.getHeaders(), 'content-length': contentLength }
+      })).data
+      await log.info(`   Jeu de données créé, id="${dataset.id}", titre="${dataset.title}"`)
 
       if (shouldBeStopped) return
 
@@ -277,7 +214,7 @@ const createDatasets = async ({ processingConfig, processingId, axios, tmpDir, l
       await log.info('Jeu de données complet')
 
       const datasetObject = { id: dataset.id, href: dataset.href, title: dataset.title }
-      const updateObject = { dataset: datasetObject, idLayer }
+      const updateObject = { dataset: datasetObject, idSheet }
       updateConfig.push(updateObject)
     }
     await log.info('')
@@ -292,11 +229,11 @@ const createDatasets = async ({ processingConfig, processingId, axios, tmpDir, l
  * @param tmpDir            Directory where to download temporary files
  * @param log               Log system that is displayed on the user interface
  * @param ws                Data Fair's Websocket allows retrieving the dataset response.
- * @param layersFieldList   Dictionary containing the structure of the file's layers (id: {name, fields, featureCount})
+ * @param sheetsList   Dictionary containing the structure of the file's sheets (id: {name, fields, featureCount})
  * @param tmpFile           Full path of the file to be processed
  * @returns   Returns nothing, used to stop the program
  */
-const updateDatasets = async ({ processingConfig, axios, tmpDir, log, ws } : XlsxProcessingContext, layersFieldList: LayersFieldList, tmpFile: string) => {
+const updateDatasets = async ({ processingConfig, axios, tmpDir, log, ws } : XlsxProcessingContext, sheetsList: SheetsList, tmpFile: string) => {
   await log.step('Mise à jour des jeux de données')
 
   // If there are no updates to extract, we stop here to simplify the display of logs on the interface.
@@ -305,7 +242,7 @@ const updateDatasets = async ({ processingConfig, axios, tmpDir, log, ws } : Xls
     return
   }
 
-  let idStream = 0
+  // let idStream = 0
   // We add size=10000 to ensure that all datasets are retrieved (12 by default)
   const datasets = (await axios.get(`api/v1/datasets/?size=10000&${processingConfig.editableUpdate ? 'rest' : 'file'}=true`)).data.results
   const datasetsIds = new Set<string>(datasets.map(d => d.id))
@@ -315,14 +252,14 @@ const updateDatasets = async ({ processingConfig, axios, tmpDir, log, ws } : Xls
     if (shouldBeStopped) return
 
     const dataset = update.dataset
-    const idLayer = update.idLayer
+    const idSheet = update.idSheet
     const formData = new FormData()
 
-    await log.info(`Mise à jour du jeu ${dataset.title} avec la couche ${idLayer}`)
+    await log.info(`Mise à jour du jeu ${dataset.title} avec la feuille ${idSheet}`)
 
-    // Check if the layer is available
-    if (!(idLayer in layersFieldList)) {
-      await log.warning(`La couche ${idLayer} n'est pas présente dans les couches disponibles`)
+    // Check if the sheet is available
+    if (!(idSheet in sheetsList)) {
+      await log.warning(`La feuille ${idSheet} n'est pas présente dans les feuilles disponibles`)
       await log.info('')
       continue
     }
@@ -351,14 +288,14 @@ const updateDatasets = async ({ processingConfig, axios, tmpDir, log, ws } : Xls
 
         // Update the schema
         await axios.post(`api/v1/datasets/${dataset.id}`, {
-          schema: layersFieldList[idLayer].fields
+          schema: sheetsList[idSheet].fields
         })
         if (shouldBeStopped) return
 
         // We are waiting for the dataset to finish processing.
         await ws.waitForJournal(dataset.id, 'finalize-end')
       } else {
-        formData.append('schema', JSON.stringify(layersFieldList[idLayer].fields))
+        formData.append('schema', JSON.stringify(sheetsList[idSheet].fields))
       }
     } else {
       // Check if the schemas match.
@@ -368,7 +305,7 @@ const updateDatasets = async ({ processingConfig, axios, tmpDir, log, ws } : Xls
       const datasetSchemaMap = new Map(datasetSchema.map(datasetField => [datasetField.key, datasetField.type]))
 
       // We don't establish equality in both directions because of the attributes added during the processing of the dataset, such as the update date, for example.
-      for (const field of layersFieldList[idLayer].fields) {
+      for (const field of sheetsList[idSheet].fields) {
         if (shouldBeStopped) return
 
         const typeFieldDataset = datasetSchemaMap.get(field.name)
@@ -387,7 +324,7 @@ const updateDatasets = async ({ processingConfig, axios, tmpDir, log, ws } : Xls
         // We are waiting for the dataset to finish processing.
         await ws.waitForJournal(dataset.id, 'finalize-end')
       } else {
-        await log.warning(`Les schémas du jeu de données ${dataset.title} et de la couche ${idLayer} ne sont pas compatibles`)
+        await log.warning(`Les schémas du jeu de données ${dataset.title} et de la feuille ${idSheet} ne sont pas compatibles`)
         await log.info('')
         continue
       }
@@ -395,13 +332,13 @@ const updateDatasets = async ({ processingConfig, axios, tmpDir, log, ws } : Xls
 
     // Data update
     if (processingConfig.editableUpdate) {
-      idStream += 1
-      await streamLayerToDataset(idStream, tmpFile, layersFieldList[idLayer].name, layersFieldList[idLayer].featureCount, dataset.id, axios, log, () => shouldBeStopped, dataset.title)
+      // idStream += 1
+      // await streamSheetToDataset(idStream, tmpFile, sheetsList[idSheet].name, sheetsList[idSheet].featureCount, dataset.id, axios, log, () => shouldBeStopped, dataset.title)
     } else {
-      const tmpFileGeoJSON = await createTmpFile(tmpDir, tmpFile, layersFieldList[idLayer].name, log, () => shouldBeStopped)
-      if (!tmpFileGeoJSON) return
+      const tmpFileXLSX = await createTmpFile(tmpDir, tmpFile, sheetsList[idSheet].name, log, () => shouldBeStopped)
+      if (!tmpFileXLSX) return
 
-      formData.append('file', await fs.createReadStream(tmpFileGeoJSON), { filename: path.parse(tmpFileGeoJSON).base })
+      formData.append('file', await fs.createReadStream(tmpFileXLSX), { filename: path.parse(tmpFileXLSX).base })
       formData.getLength = util.promisify(formData.getLength)
       const contentLength = await formData.getLength()
       await log.info(`Chargement de ${formatBytes(contentLength!)}`)

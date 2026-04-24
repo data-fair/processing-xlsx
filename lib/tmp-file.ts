@@ -1,28 +1,47 @@
 import fs from 'fs-extra'
 import path from 'path'
+import Excel from 'exceljs'
 
-import { runCommand } from './spawn-process.ts'
 import type { XlsxProcessingContext } from './context.ts'
 
 /**
- * Allows you to create a temporary .geojson file from a layer in the data file, to be sent to create a file dataset.
+ * Allows you to create a temporary .xlsx file from a sheet in the data file, to be sent to create a file dataset.
  * @param dir         Directory where to store the file
- * @param tmpFile     Name of the temporary file containing the original data (multi-layered xlsx)
- * @param layerName   Name of the layer to be extracted
+ * @param tmpFile     Name of the temporary file containing the original data (multi-sheeted xlsx)
+ * @param sheetName   Name of the sheet to be extracted
  * @param log         Log system that is displayed on the user interface
  * @param isStopped   Function allowing the program to stop if requested
  * @returns   Name of the temporary file created to send
  */
-export const createTmpFile = async (dir : string, tmpFile : string, layerName : string, log: XlsxProcessingContext['log'], isStopped: () => boolean) => {
-  const tmpFileGeoJSON = path.join(dir, `${layerName}.geojson`)
+export const createTmpFile = async (dir : string, tmpFile : string, sheetName : string, log: XlsxProcessingContext['log'], isStopped: () => boolean) => {
+  const tmpFileXLSX = path.join(dir, `${sheetName}.xlsx`)
 
-  // If there are two updates with the same layer, it is only downloaded once.
-  if (!(await fs.pathExists(tmpFileGeoJSON))) {
-    await log.info('Création du fichier temporaire')
+  if (await fs.pathExists(tmpFileXLSX)) return tmpFileXLSX
+
+  await log.info('Création du fichier temporaire')
+  if (isStopped()) return
+
+  const workbookReader = new Excel.stream.xlsx.WorkbookReader(tmpFile, {})
+  const workbookWriter = new Excel.stream.xlsx.WorkbookWriter({ filename: tmpFileXLSX })
+  const sheetWriter = workbookWriter.addWorksheet(sheetName)
+
+  for await (const worksheetReader of workbookReader) {
     if (isStopped()) return
+    if (worksheetReader.name !== sheetName) {
+      continue
+    }
 
-    await runCommand('ogr2ogr', ['-f', 'GeoJSON', '-lco', 'RFC7946=YES', '-t_srs', 'EPSG:4326', tmpFileGeoJSON, tmpFile, layerName])
+    for await (const row of worksheetReader) {
+      if (isStopped()) return
+      sheetWriter.addRow(row.values).commit()
+    }
+    break
   }
 
-  return tmpFileGeoJSON
+  if (isStopped()) return
+
+  await sheetWriter.commit()
+  await workbookWriter.commit()
+
+  return tmpFileXLSX
 }

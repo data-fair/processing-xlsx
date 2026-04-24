@@ -12,7 +12,7 @@
       },
       "oneOf": [
         {
-          "title" : "Lister les différentes couches",
+          "title" : "Lister les différentes feuilles",
           "properties": {
             "datasetMode": {
               "type": "string",
@@ -38,15 +38,10 @@
                 "prefix"
               ],
               "properties": {
-                "editableCreate": {
-                  "type": "boolean",
-                  "title": "Jeux de données éditables",
-                  "description": "Par défaut, on crée des jeux de données fichier, moins coûteux en mémoire, mais difficilement actualisables"
-                },
                 "prefix": {
                   "type": "string",
                   "title": "Préfixe des noms des jeux de données",
-                  "description": "Les titres des jeux de données sont construits avec ce préfixe et le nom de la couche correspondante."
+                  "description": "Les titres des jeux de données sont construits avec ce préfixe et le nom de la feuille correspondante."
                 }
               }
             }
@@ -59,11 +54,6 @@
               "type": "string",
               "const": "update",
               "title": "Action"
-            },
-            "editableUpdate": {
-              "type": "boolean",
-              "title": "Jeux de données éditables",
-              "description": "Par défaut, on met à jour des jeux de données fichier"
             },
             "datasets": {
               "type": "array",
@@ -82,7 +72,7 @@
                     },
                     {
                       "children": [
-                        "idLayer"
+                        "idSheet"
                       ],
                       "cols": 3
                     },
@@ -95,7 +85,7 @@
                   ],
                 "required": [
                   "dataset",
-                  "idLayer"
+                  "idSheet"
                 ],
                 "properties": {
                   "dataset": {
@@ -117,16 +107,16 @@
                     },
                     "layout": {
                       "getItems": {
-                        "url": "${context.dataFairUrl}/api/v1/datasets?q={q}&select=id,title&${context.ownerFilter}&${parent.parent.parent.parent.data.editableUpdate === true ? 'rest' : 'file'}=true",
+                        "url": "${context.dataFairUrl}/api/v1/datasets?q={q}&select=id,title&${context.ownerFilter}&$file=true",
                         "itemsResults": "data.results",
                         "itemTitle": "item.title",
                         "itemKey": "item.id"
                       }
                     }
                   },
-                  "idLayer": {
+                  "idSheet": {
                     "type": "integer",
-                    "title": "Numéro de la couche",
+                    "title": "Numéro de la feuille",
                     "minimum": 1
                   },
                   "forceUpdate": {
@@ -151,14 +141,14 @@
           "type": "string",
           "description": "Les protocoles supportés sont HTTP et HTTPS, les formats supportés sont .zip et .xlsx."
         },
-        "idsLayers": {
+        "idsSheets": {
           "type": "array",
-          "title": "Couches à extraire",
+          "title": "Feuilles à extraire",
           "items": {
             "type": "integer",
             "minimum": 1
           },
-          "description": "Les nombres à indiquer correspondent aux numéros des couches à extraire.",
+          "description": "Les nombres à indiquer correspondent aux numéros des feuilles à extraire.",
           "layout": {
             "if" : "parent.parent.data.datasetMode === 'create'"
           }
