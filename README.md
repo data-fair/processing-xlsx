@@ -26,7 +26,7 @@ For this mode, you only need to enter the URL.
 | Tab | Field | Description |
 | --- | ----- | ----------- |
 | Liste de jeux de données | `prefix` | This corresponds to the title of the datasets to be created. The datasets are named according to this prefix and the name of the corresponding sheet |
-| Paramètres | `idsLayers` | Identifier of the sheets to extract to create datasets |
+| Paramètres | `idsSheets` | Identifier of the sheets to extract to create datasets |
 
 ### update
 
@@ -34,5 +34,5 @@ For this mode, you only need to enter the URL.
 | --- | ----- | ----------- |
 | Liste de jeux de données | `datasets` | List of datasets to be updated, taking into account the sheet number and the schema update forcing |
 | Liste de jeux de données - Jeux à mettre à jour | `dataset` | Name of the dataset to update, selectable from the list of available datasets |
-| Liste de jeux de données - Jeux à mettre à jour | `idLayer` | Layer number used to update the corresponding dataset |
+| Liste de jeux de données - Jeux à mettre à jour | `idSheet` | Sheet number used to update the corresponding dataset |
 | Liste de jeux de données - Jeux à mettre à jour | `forceUpdate` | Indicates whether the scheme update should also be forced |
