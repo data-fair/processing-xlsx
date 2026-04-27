@@ -288,7 +288,6 @@ const updateDatasets = async ({ processingConfig, axios, tmpDir, log, ws } : Xls
 
     if (shouldBeStopped) return
 
-    await log.info(`api/v1/datasets/${dataset.id}${update.forceUpdate ? '' : '?draft=true'}`)
     await axios({
       method: 'post',
       url: `api/v1/datasets/${dataset.id}${update.forceUpdate ? '' : '?draft=true'}`,
