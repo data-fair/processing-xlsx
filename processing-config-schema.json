@@ -6,13 +6,15 @@
   ],
   "allOf": [
     {
-      "title": "Liste de jeux de données",
+      "title": "Dataset mode",
+      "x-i18n-title": { "fr": "Liste de jeux de données", "en": "Datasets" },
       "default": {
         "datasetMode": "list"
       },
       "oneOf": [
         {
-          "title" : "Lister les différentes feuilles",
+          "title": "List sheets",
+          "x-i18n-title": { "fr": "Lister les différentes feuilles", "en": "List the available sheets" },
           "properties": {
             "datasetMode": {
               "type": "string",
@@ -22,7 +24,8 @@
           }
         },
         {
-          "title": "Créer des jeux de données",
+          "title": "Create datasets",
+          "x-i18n-title": { "fr": "Créer des jeux de données", "en": "Create datasets" },
           "required": [
             "dataset"
           ],
@@ -40,15 +43,18 @@
               "properties": {
                 "prefix": {
                   "type": "string",
-                  "title": "Préfixe des noms des jeux de données",
-                  "description": "Les titres des jeux de données sont construits avec ce préfixe et le nom de la feuille correspondante."
+                  "title": "Datasets prefix",
+                  "x-i18n-title": { "fr": "Préfixe des noms des jeux de données", "en": "Datasets name prefix" },
+                  "description": "Dataset titles are built from this prefix and the matching sheet name.",
+                  "x-i18n-description": { "fr": "Les titres des jeux de données sont construits avec ce préfixe et le nom de la feuille correspondante.", "en": "Dataset titles are built from this prefix and the matching sheet name." }
                 }
               }
             }
           }
         },
         {
-          "title": "Mettre à jour des jeux de données",
+          "title": "Update datasets",
+          "x-i18n-title": { "fr": "Mettre à jour des jeux de données", "en": "Update datasets" },
           "properties": {
             "datasetMode": {
               "type": "string",
@@ -57,32 +63,33 @@
             },
             "datasets": {
               "type": "array",
-              "title": "Jeux à mettre à jour",
+              "title": "Datasets to update",
+              "x-i18n-title": { "fr": "Jeux à mettre à jour", "en": "Datasets to update" },
               "layout": {
                 "listEditMode": "inline"
               },
               "items": {
-                "type" : "object",
-                  "layout" : [
-                    {
-                      "children": [
-                        "dataset"
-                      ],
-                      "cols": 5
-                    },
-                    {
-                      "children": [
-                        "idSheet"
-                      ],
-                      "cols": 3
-                    },
-                    {
-                      "children": [
-                        "forceUpdate"
-                      ],
-                      "cols": 3
-                    }
-                  ],
+                "type": "object",
+                "layout": [
+                  {
+                    "children": [
+                      "dataset"
+                    ],
+                    "cols": 5
+                  },
+                  {
+                    "children": [
+                      "idSheet"
+                    ],
+                    "cols": 3
+                  },
+                  {
+                    "children": [
+                      "forceUpdate"
+                    ],
+                    "cols": 3
+                  }
+                ],
                 "required": [
                   "dataset",
                   "idSheet"
@@ -90,11 +97,13 @@
                 "properties": {
                   "dataset": {
                     "type": "object",
-                    "title": "Jeu de données existant",
+                    "title": "Existing dataset",
+                    "x-i18n-title": { "fr": "Jeu de données existant", "en": "Existing dataset" },
                     "properties": {
                       "id": {
                         "type": "string",
-                        "title": "Identifiant"
+                        "title": "Identifier",
+                        "x-i18n-title": { "fr": "Identifiant", "en": "Identifier" }
                       },
                       "href": {
                         "type": "string",
@@ -102,7 +111,8 @@
                       },
                       "title": {
                         "type": "string",
-                        "title": "Titre"
+                        "title": "Title",
+                        "x-i18n-title": { "fr": "Titre", "en": "Title" }
                       }
                     },
                     "layout": {
@@ -116,12 +126,14 @@
                   },
                   "idSheet": {
                     "type": "integer",
-                    "title": "Numéro de la feuille",
+                    "title": "Sheet number",
+                    "x-i18n-title": { "fr": "Numéro de la feuille", "en": "Sheet number" },
                     "minimum": 1
                   },
                   "forceUpdate": {
-                    "type" : "boolean",
-                    "title" : "Forcer la mise à jour du schéma"
+                    "type": "boolean",
+                    "title": "Force schema update",
+                    "x-i18n-title": { "fr": "Forcer la mise à jour du schéma", "en": "Force schema update" }
                   }
                 }
               }
@@ -131,26 +143,31 @@
       ]
     },
     {
-      "title": "Paramètres",
+      "title": "Parameters",
+      "x-i18n-title": { "fr": "Paramètres", "en": "Parameters" },
       "required": [
         "url"
       ],
       "properties": {
         "url": {
-          "title": "URL source",
+          "title": "Source URL",
+          "x-i18n-title": { "fr": "URL source", "en": "Source URL" },
           "type": "string",
-          "description": "Les protocoles supportés sont HTTP et HTTPS, les formats supportés sont .zip et .xlsx."
+          "description": "Supported protocols are HTTP and HTTPS; supported formats are .zip and .xlsx.",
+          "x-i18n-description": { "fr": "Les protocoles supportés sont HTTP et HTTPS, les formats supportés sont .zip et .xlsx.", "en": "Supported protocols are HTTP and HTTPS; supported formats are .zip and .xlsx." }
         },
         "idsSheets": {
           "type": "array",
-          "title": "Feuilles à extraire",
+          "title": "Sheets to extract",
+          "x-i18n-title": { "fr": "Feuilles à extraire", "en": "Sheets to extract" },
           "items": {
             "type": "integer",
             "minimum": 1
           },
-          "description": "Les nombres à indiquer correspondent aux numéros des feuilles à extraire.",
+          "description": "The numbers correspond to the indexes of the sheets to extract.",
+          "x-i18n-description": { "fr": "Les nombres à indiquer correspondent aux numéros des feuilles à extraire.", "en": "The numbers correspond to the indexes of the sheets to extract." },
           "layout": {
-            "if" : "parent.parent.data.datasetMode === 'create'"
+            "if": "parent.parent.data.datasetMode === 'create'"
           }
         }
       }

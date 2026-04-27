@@ -1,5 +1,5 @@
 import type { RunFunction } from '@data-fair/lib-common-types/processings.js'
-import type { ProcessingConfig } from '#types/processingConfig/index.ts'
+import type { ProcessingConfig, CreateDatasets, UpdateDatasets } from '#types/processingConfig/index.ts'
 import { formatBytes } from '@data-fair/lib-utils/format/bytes.js'
 
 import util from 'util'
@@ -15,13 +15,82 @@ import { runCommand } from './spawn-process.ts'
 
 /**
  * Allows for a requested program shutdown to be scheduled.
+ *
+ * `stopSignal` is a promise that resolves the moment `stop()` is called. Long-running
+ * waiters (typically `ws.waitForJournal` in phase 2) race against it so they can bail
+ * out immediately instead of timing out after several minutes.
  */
 let shouldBeStopped = false
+let stopSignal: Promise<void> = new Promise(() => {})
+let resolveStop: () => void = () => {}
 
-export const stop: () => Promise<void> = async () => { shouldBeStopped = true }
+export const stop: () => Promise<void> = async () => {
+  shouldBeStopped = true
+  resolveStop()
+}
 
 type SheetsList = {
   [idSheet: number]: { name: string, featureCount: number }
+}
+
+type PendingFinalization = {
+  promise: Promise<{ ok: true, journal: any } | { ok: false, error: Error }>
+  datasetId: string
+  datasetTitle: string
+}
+
+/**
+ * Starts listening for the `finalize-end` journal event of a dataset without blocking.
+ *
+ * `ws.waitForJournal` is invoked synchronously so the WebSocket subscription is set
+ * up immediately after the upload — this keeps the race window between "event emitted
+ * by the server" and "listener attached on the client" down to a single roundtrip,
+ * matching the behaviour of the original sequential flow. The returned promise never
+ * rejects: failures are converted into a warning log and an `{ ok: false }` result so
+ * one bad finalization cannot abort `Promise.allSettled` over the whole batch. The
+ * wait also races against the module-level `stopSignal`, so a `stop()` triggers an
+ * immediate bail-out without waiting for the journal timeout.
+ *
+ * @param ws            Data Fair WebSocket client used to receive journal events.
+ * @param log           Log system displayed in the user interface.
+ * @param datasetId     Id of the dataset whose finalization should be awaited.
+ * @param datasetTitle  Human-readable dataset title, used in log messages.
+ * @param opts.successMessage  Message logged when the finalization succeeds.
+ * @param opts.checkDraft      When true, a draft state on the journal triggers a schema-
+ *                             incompatibility warning instead of the success message
+ *                             (used by update flows).
+ * @returns A `PendingFinalization` whose `promise` settles once the event arrives,
+ *          the run is stopped, the wait times out, or fails — never rejects.
+ */
+const trackFinalization = (
+  ws: XlsxProcessingContext['ws'],
+  log: XlsxProcessingContext['log'],
+  datasetId: string,
+  datasetTitle: string,
+  opts: { successMessage: string, checkDraft?: boolean }
+): PendingFinalization => {
+  const journalPromise = ws.waitForJournal(datasetId, 'finalize-end')
+    .then(journal => ({ kind: 'event' as const, journal }))
+  const stopPromise = stopSignal.then(() => ({ kind: 'stopped' as const }))
+
+  const promise = Promise.race([journalPromise, stopPromise])
+    .then(async (result) => {
+      if (result.kind === 'stopped') {
+        return { ok: false as const, error: new Error('stopped') }
+      }
+      const journal: any = result.journal
+      if (opts.checkDraft && (journal.draft !== undefined || journal.draft)) {
+        await log.warning(`Le jeu de données "${datasetTitle}" : les schémas ne sont pas compatibles. Le jeu est passé en mode brouillon, à vous de le valider ou non.`)
+      } else {
+        await log.info(`${opts.successMessage} : "${datasetTitle}"`)
+      }
+      return { ok: true as const, journal }
+    })
+    .catch(async (error: Error) => {
+      await log.warning(`Le jeu de données "${datasetTitle}" n'a pas pu être finalisé (${error.message}), vous pouvez relancer son traitement.`)
+      return { ok: false as const, error }
+    })
+  return { promise, datasetId, datasetTitle }
 }
 
 /**
@@ -30,26 +99,37 @@ type SheetsList = {
  */
 export const run: RunFunction<ProcessingConfig> = async (context) => {
   shouldBeStopped = false
+  stopSignal = new Promise<void>(resolve => { resolveStop = resolve })
 
-  // Retrieving the contextual elements necessary for processing
-  const { processingConfig, patchConfig } = context
-  const tmpFile = await download(context)
+  try {
+    // Retrieving the contextual elements necessary for processing
+    const { processingConfig, patchConfig } = context
+    const tmpFile = await download(context)
 
-  if (shouldBeStopped) return
-  if (!tmpFile) return
-  const sheetsList = await extraction(context, tmpFile)
+    if (shouldBeStopped) return
+    if (!tmpFile) return
+    const sheetsList = await extraction(context, tmpFile)
 
-  if (shouldBeStopped) return
-  if (!sheetsList) return
+    if (shouldBeStopped) return
+    if (!sheetsList) return
 
-  if (processingConfig.datasetMode === 'create') {
-    const updateConfig = await createDatasets(context, sheetsList, tmpFile)
+    if (processingConfig.datasetMode === 'create') {
+      const updateConfig = await createDatasets(context, sheetsList, tmpFile)
 
-    if (updateConfig?.length) await patchConfig({ datasetMode: 'update', datasets: updateConfig })
-  } else if (processingConfig.datasetMode === 'update') {
-    await updateDatasets(context, sheetsList, tmpFile)
-  } else {
-    await patchConfig({ datasetMode: 'create', dataset: { prefix: '' } })
+      // The lib-common-types signature only allows `dataset` (singular), but the worker's
+      // patchConfig is a generic Object.assign on the config — `datasets` is supported at runtime.
+      if (updateConfig?.length) await patchConfig({ datasetMode: 'update', datasets: updateConfig } as any)
+    } else if (processingConfig.datasetMode === 'update') {
+      await updateDatasets(context, sheetsList, tmpFile)
+    } else {
+      await patchConfig({ datasetMode: 'create', dataset: { prefix: '' } })
+    }
+  } finally {
+    // Settle the stop signal so any continuation chained on it (the `stopSignal.then(...)`
+    // branches inside `trackFinalization`) is released. At this point all the relevant
+    // `Promise.race` calls have already resolved via the journal branch, so this late
+    // resolution is a no-op behaviour-wise — it only frees handlers.
+    resolveStop()
   }
 }
 
@@ -113,7 +193,6 @@ const download = async ({ processingConfig, tmpDir, axios, log } : XlsxProcessin
       tmpFile = filesXlsx[0]
     }
   } else if (filename.toLowerCase().endsWith('.xlsx')) {
-    await log.info('Récupération du fichier xlsx')
     xlsxFilename = filename
   } else {
     await log.info('Le format n\'est pas pris en charge')
@@ -165,7 +244,9 @@ const extraction = async ({ log }: XlsxProcessingContext, tmpFile : string) => {
  * @param tmpFile           Full path of the file to be processed
  * @returns   A list of objects associating sheets and datasets, or nothing at all to stop the program
  */
-const createDatasets = async ({ processingConfig, axios, tmpDir, log, ws } : XlsxProcessingContext, sheetsList: SheetsList, tmpFile: string) => {
+const createDatasets = async ({ processingConfig: rawConfig, axios, tmpDir, log, ws } : XlsxProcessingContext, sheetsList: SheetsList, tmpFile: string) => {
+  // Narrow the union type to the create-mode branch (caller guarantees datasetMode === 'create').
+  const processingConfig = rawConfig as CreateDatasets & { idsSheets?: number[] }
   await log.step('Construction des jeux de données')
 
   // If there are no sheets to extract, we stop here to simplify the display of logs on the interface.
@@ -175,6 +256,7 @@ const createDatasets = async ({ processingConfig, axios, tmpDir, log, ws } : Xls
   }
 
   const updateConfig = []
+  const pendingFinalizations: PendingFinalization[] = []
 
   for (const idSheet of processingConfig.idsSheets) {
     if (shouldBeStopped) return
@@ -188,11 +270,11 @@ const createDatasets = async ({ processingConfig, axios, tmpDir, log, ws } : Xls
       if (!tmpFileXLSX) return
 
       const formData = new FormData()
-      formData.append('title', `${processingConfig.dataset.prefix}-${sheetsList[idSheet].name}`)
+      formData.append('title', `${processingConfig.dataset.prefix} - ${sheetsList[idSheet].name}`)
       formData.append('file', await fs.createReadStream(tmpFileXLSX), { filename: path.parse(tmpFileXLSX).base })
-      formData.getLength = util.promisify(formData.getLength)
-      const contentLength = await formData.getLength()
-      await log.info(`Chargement de ${formatBytes(contentLength!)}`)
+      const getLength = util.promisify(formData.getLength.bind(formData))
+      const contentLength = await getLength()
+      await log.info(`Chargement de ${formatBytes(contentLength)}`)
 
       if (shouldBeStopped) return
 
@@ -206,11 +288,7 @@ const createDatasets = async ({ processingConfig, axios, tmpDir, log, ws } : Xls
       })).data
       await log.info(`   Jeu de données créé, id="${dataset.id}", titre="${dataset.title}"`)
 
-      if (shouldBeStopped) return
-
-      // We are waiting for the dataset to finish processing.
-      await ws.waitForJournal(dataset.id, 'finalize-end')
-      await log.info('Jeu de données complet')
+      pendingFinalizations.push(trackFinalization(ws, log, dataset.id, dataset.title, { successMessage: 'Jeu de données finalisé' }))
 
       const datasetObject = { id: dataset.id, href: dataset.href, title: dataset.title }
       const updateObject = { dataset: datasetObject, idSheet }
@@ -218,6 +296,12 @@ const createDatasets = async ({ processingConfig, axios, tmpDir, log, ws } : Xls
     }
     await log.info('')
   }
+
+  if (pendingFinalizations.length > 0) {
+    await log.step('Finalisation des jeux de données')
+    await Promise.allSettled(pendingFinalizations.map(p => p.promise))
+  }
+
   return updateConfig
 }
 
@@ -232,7 +316,9 @@ const createDatasets = async ({ processingConfig, axios, tmpDir, log, ws } : Xls
  * @param tmpFile           Full path of the file to be processed
  * @returns   Returns nothing, used to stop the program
  */
-const updateDatasets = async ({ processingConfig, axios, tmpDir, log, ws } : XlsxProcessingContext, sheetsList: SheetsList, tmpFile: string) => {
+const updateDatasets = async ({ processingConfig: rawConfig, axios, tmpDir, log, ws } : XlsxProcessingContext, sheetsList: SheetsList, tmpFile: string) => {
+  // Narrow the union type to the update-mode branch (caller guarantees datasetMode === 'update').
+  const processingConfig = rawConfig as UpdateDatasets
   await log.step('Mise à jour des jeux de données')
 
   // If there are no updates to extract, we stop here to simplify the display of logs on the interface.
@@ -246,8 +332,10 @@ const updateDatasets = async ({ processingConfig, axios, tmpDir, log, ws } : Xls
   // ---------------------------------
 
   // We add size=10000 to ensure that all datasets are retrieved (12 by default)
-  const datasets = (await axios.get('api/v1/datasets/?size=10000&file=true')).data.results
+  const datasets = (await axios.get<{ results: { id: string }[] }>('api/v1/datasets/?size=10000&file=true')).data.results
   const datasetsIds = new Set<string>(datasets.map(d => d.id))
+
+  const pendingFinalizations: PendingFinalization[] = []
 
   // We process each dataset to be updated
   for (const update of processingConfig.datasets) {
@@ -258,6 +346,12 @@ const updateDatasets = async ({ processingConfig, axios, tmpDir, log, ws } : Xls
     const formData = new FormData()
 
     await log.info(`Mise à jour du jeu ${dataset.title} avec la feuille ${idSheet}`)
+
+    if (!dataset.id || !dataset.title) {
+      await log.warning('Le jeu de données est incomplet (id ou titre manquant)')
+      await log.info('')
+      continue
+    }
 
     // Check if the sheet is available
     if (!(idSheet in sheetsList)) {
@@ -282,9 +376,9 @@ const updateDatasets = async ({ processingConfig, axios, tmpDir, log, ws } : Xls
     if (!tmpFileXLSX) return
 
     formData.append('file', await fs.createReadStream(tmpFileXLSX), { filename: path.parse(tmpFileXLSX).base })
-    formData.getLength = util.promisify(formData.getLength)
-    const contentLength = await formData.getLength()
-    await log.info(`Chargement de ${formatBytes(contentLength!)}`)
+    const getLength = util.promisify(formData.getLength.bind(formData))
+    const contentLength = await getLength()
+    await log.info(`Chargement de ${formatBytes(contentLength)}`)
 
     if (shouldBeStopped) return
 
@@ -297,18 +391,13 @@ const updateDatasets = async ({ processingConfig, axios, tmpDir, log, ws } : Xls
       headers: { ...formData.getHeaders(), 'content-length': contentLength }
     })
 
-    if (shouldBeStopped) return
-
-    // We are waiting for the dataset to finish processing.
-    const journal = await ws.waitForJournal(dataset.id, 'finalize-end')
-
-    // At the end of the update, if the dataset is in draft mode, it means there was a schema compatibility issue.
-    if (journal.draft !== undefined || journal.draft) {
-      await log.warning('Les schémas ne sont pas compatibles. Votre jeu de données est passé en mode brouillon, à vous de le valider ou non.')
-    } else {
-      await log.info('Mise à jour complète')
-    }
+    pendingFinalizations.push(trackFinalization(ws, log, dataset.id, dataset.title, { successMessage: 'Mise à jour terminée', checkDraft: true }))
 
     await log.info('')
+  }
+
+  if (pendingFinalizations.length > 0) {
+    await log.step('Finalisation des mises à jour')
+    await Promise.allSettled(pendingFinalizations.map(p => p.promise))
   }
 }
