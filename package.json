@@ -55,7 +55,8 @@
   },
   "dependencies": {
     "@data-fair/lib-utils": "^1.10.2",
-    "exceljs": "^4.4.0",
+    "exceljs": "^3.4.0",
+    "form-data": "^4.0.5",
     "fs-extra": "^11.3.4"
   }
 }
