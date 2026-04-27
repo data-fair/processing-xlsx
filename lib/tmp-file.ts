@@ -21,10 +21,12 @@ export const createTmpFile = async (dir : string, tmpFile : string, sheetName : 
   await log.info('Création du fichier temporaire')
   if (isStopped()) return
 
+  // Creating a stream for large files
   const workbookReader = new Excel.stream.xlsx.WorkbookReader(tmpFile, {})
   const workbookWriter = new Excel.stream.xlsx.WorkbookWriter({ filename: tmpFileXLSX })
   const sheetWriter = workbookWriter.addWorksheet(sheetName)
 
+  // Retrieving the lines from the correct sheet
   for await (const worksheetReader of workbookReader) {
     if (isStopped()) return
     if (worksheetReader.name !== sheetName) {

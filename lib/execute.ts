@@ -157,7 +157,6 @@ const extraction = async ({ log }: XlsxProcessingContext, tmpFile : string) => {
 /**
  * Allows you to create the requested sheet datasets
  * @param processingConfig  Processing configuration, obtained from the form data (processing-config-schema.json)
- * @param processingId      Identifier of the processing currently in use
  * @param axios             Server for API requests
  * @param tmpDir            Directory where to download temporary files
  * @param log               Log system that is displayed on the user interface
@@ -166,7 +165,7 @@ const extraction = async ({ log }: XlsxProcessingContext, tmpFile : string) => {
  * @param tmpFile           Full path of the file to be processed
  * @returns   A list of objects associating sheets and datasets, or nothing at all to stop the program
  */
-const createDatasets = async ({ processingConfig, processingId, axios, tmpDir, log, ws } : XlsxProcessingContext, sheetsList: SheetsList, tmpFile: string) => {
+const createDatasets = async ({ processingConfig, axios, tmpDir, log, ws } : XlsxProcessingContext, sheetsList: SheetsList, tmpFile: string) => {
   await log.step('Construction des jeux de données')
 
   // If there are no sheets to extract, we stop here to simplify the display of logs on the interface.
@@ -242,9 +241,12 @@ const updateDatasets = async ({ processingConfig, axios, tmpDir, log, ws } : Xls
     return
   }
 
-  // let idStream = 0
+  // ---------------------------------
+  // SECURITY (normally not necessary): we verify that we have a file dataset
+  // ---------------------------------
+
   // We add size=10000 to ensure that all datasets are retrieved (12 by default)
-  const datasets = (await axios.get(`api/v1/datasets/?size=10000&${processingConfig.editableUpdate ? 'rest' : 'file'}=true`)).data.results
+  const datasets = (await axios.get('api/v1/datasets/?size=10000&file=true')).data.results
   const datasetsIds = new Set<string>(datasets.map(d => d.id))
 
   // We process each dataset to be updated
@@ -266,100 +268,48 @@ const updateDatasets = async ({ processingConfig, axios, tmpDir, log, ws } : Xls
 
     // Check if the correct update operation can be performed, to avoid permission errors
     if (!(datasetsIds.has(dataset.id))) {
-      await log.warning(`Le jeu de données ${dataset.title} n'est pas de type ${processingConfig.editableUpdate ? 'éditable' : 'fichier'}`)
+      await log.warning(`Le jeu de données ${dataset.title} n'est pas de type fichier`)
       await log.info('')
       continue
     }
 
-    // Retrieving the dataset schema
-    const datasetSchema : { key: string, type: string }[] = (await axios.get(`api/v1/datasets/${dataset.id}`)).data.schema
     if (shouldBeStopped) return
 
-    if (update.forceUpdate) {
-      await log.info('Mise à jour forcée du schéma')
-
-      if (processingConfig.editableUpdate) {
-        // Drop the old data
-        await axios.post(`api/v1/datasets/${dataset.id}/_bulk_lines?drop=true`, [])
-        if (shouldBeStopped) return
-
-        // We are waiting for the dataset to finish processing.
-        await ws.waitForJournal(dataset.id, 'finalize-end')
-
-        // Update the schema
-        await axios.post(`api/v1/datasets/${dataset.id}`, {
-          schema: sheetsList[idSheet].fields
-        })
-        if (shouldBeStopped) return
-
-        // We are waiting for the dataset to finish processing.
-        await ws.waitForJournal(dataset.id, 'finalize-end')
-      } else {
-        formData.append('schema', JSON.stringify(sheetsList[idSheet].fields))
-      }
-    } else {
-      // Check if the schemas match.
-      await log.info('Vérification de la compatibilité des schémas')
-
-      let compatible = true
-      const datasetSchemaMap = new Map(datasetSchema.map(datasetField => [datasetField.key, datasetField.type]))
-
-      // We don't establish equality in both directions because of the attributes added during the processing of the dataset, such as the update date, for example.
-      for (const field of sheetsList[idSheet].fields) {
-        if (shouldBeStopped) return
-
-        const typeFieldDataset = datasetSchemaMap.get(field.name)
-
-        if (typeFieldDataset !== field.type) {
-          compatible = false
-          break
-        }
-      }
-
-      if (compatible) {
-        // Drop the old data
-        if (shouldBeStopped) return
-        if (processingConfig.editableUpdate) await axios.post(`api/v1/datasets/${dataset.id}/_bulk_lines?drop=true`, [])
-
-        // We are waiting for the dataset to finish processing.
-        await ws.waitForJournal(dataset.id, 'finalize-end')
-      } else {
-        await log.warning(`Les schémas du jeu de données ${dataset.title} et de la feuille ${idSheet} ne sont pas compatibles`)
-        await log.info('')
-        continue
-      }
-    }
+    if (update.forceUpdate) await log.info('Mise à jour forcée du schéma')
 
     // Data update
-    if (processingConfig.editableUpdate) {
-      // idStream += 1
-      // await streamSheetToDataset(idStream, tmpFile, sheetsList[idSheet].name, sheetsList[idSheet].featureCount, dataset.id, axios, log, () => shouldBeStopped, dataset.title)
-    } else {
-      const tmpFileXLSX = await createTmpFile(tmpDir, tmpFile, sheetsList[idSheet].name, log, () => shouldBeStopped)
-      if (!tmpFileXLSX) return
+    const tmpFileXLSX = await createTmpFile(tmpDir, tmpFile, sheetsList[idSheet].name, log, () => shouldBeStopped)
+    if (!tmpFileXLSX) return
 
-      formData.append('file', await fs.createReadStream(tmpFileXLSX), { filename: path.parse(tmpFileXLSX).base })
-      formData.getLength = util.promisify(formData.getLength)
-      const contentLength = await formData.getLength()
-      await log.info(`Chargement de ${formatBytes(contentLength!)}`)
-
-      if (shouldBeStopped) return
-
-      await axios({
-        method: 'post',
-        url: `api/v1/datasets/${dataset.id}`,
-        data: formData,
-        maxContentLength: Infinity,
-        maxBodyLength: Infinity,
-        headers: { ...formData.getHeaders(), 'content-length': contentLength }
-      })
-    }
+    formData.append('file', await fs.createReadStream(tmpFileXLSX), { filename: path.parse(tmpFileXLSX).base })
+    formData.getLength = util.promisify(formData.getLength)
+    const contentLength = await formData.getLength()
+    await log.info(`Chargement de ${formatBytes(contentLength!)}`)
 
     if (shouldBeStopped) return
-    // We are waiting for the dataset to finish processing.
-    await ws.waitForJournal(dataset.id, 'finalize-end')
 
-    await log.info('Mise à jour complète')
+    await log.info(`api/v1/datasets/${dataset.id}${update.forceUpdate ? '' : '?draft=true'}`)
+    await axios({
+      method: 'post',
+      url: `api/v1/datasets/${dataset.id}${update.forceUpdate ? '' : '?draft=true'}`,
+      data: formData,
+      maxContentLength: Infinity,
+      maxBodyLength: Infinity,
+      headers: { ...formData.getHeaders(), 'content-length': contentLength }
+    })
+
+    if (shouldBeStopped) return
+
+    // We are waiting for the dataset to finish processing.
+    const journal = await ws.waitForJournal(dataset.id, 'finalize-end')
+
+    // At the end of the update, if the dataset is in draft mode, it means there was a schema compatibility issue.
+    if (journal.draft !== undefined || journal.draft) {
+      await log.warning('Les schémas ne sont pas compatibles. Votre jeu de données est passé en mode brouillon, à vous de le valider ou non.')
+    } else {
+      await log.info('Mise à jour complète')
+    }
+
     await log.info('')
   }
 }
