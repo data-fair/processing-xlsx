@@ -4,6 +4,8 @@ import Excel from 'exceljs'
 
 import type { XlsxProcessingContext } from './context.ts'
 
+type NamedWorksheetReader = Excel.stream.xlsx.WorksheetReader & { name: string, destroy: () => void }
+
 /**
  * Allows you to create a temporary .xlsx file from a sheet in the data file, to be sent to create a file dataset.
  * @param dir         Directory where to store the file
@@ -28,8 +30,10 @@ export const createTmpFile = async (dir : string, tmpFile : string, sheetName : 
 
   // Retrieving the lines from the correct sheet
   for await (const worksheetReader of workbookReader) {
+    // Try to fix a typing problem in ExcelJS
+    const reader = worksheetReader as unknown as NamedWorksheetReader
     if (isStopped()) return
-    if (worksheetReader.name !== sheetName) {
+    if (reader.name !== sheetName) {
       continue
     }
 
