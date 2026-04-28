@@ -168,8 +168,8 @@
           "type": "string",
           "title": "Sheets to extract",
           "x-i18n-title": { "fr": "Feuilles à extraire", "en": "Sheets to extract" },
-          "description": "The numbers correspond to the indexes of the sheets to extract.",
-          "x-i18n-description": { "fr": "Séparer les nombres par des virgules et les intervalles par des tirets (1,3 pour les feuilles 1 et 3, 1-3 pour les feuilles 1 à 3)", "en": "Separate numbers with commas and intervals with dashes (1,3 for sheets 1 and 3, 1-3 for sheets 1 to 3)" },
+          "description": "Separate numbers with commas and intervals with dashes (1,3 for sheets 1 and 3, 1-3 for sheets 1 to 3).",
+          "x-i18n-description": { "fr": "Séparer les nombres par des virgules et les intervalles par des tirets (1,3 pour les feuilles 1 et 3, 1-3 pour les feuilles 1 à 3).", "en": "Separate numbers with commas and intervals with dashes (1,3 for sheets 1 and 3, 1-3 for sheets 1 to 3)." },
           "layout": {
             "if": "parent.parent.data.datasetMode === 'create' && parent.data.addAllSheets === false"
           }

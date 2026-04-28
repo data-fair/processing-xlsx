@@ -292,7 +292,7 @@ const createDatasets = async ({ processingConfig: rawConfig, axios, tmpDir, log,
     return
   }
 
-  await log.info(`Extraction des couches ${idsSheets}`)
+  await log.info(`Extraction des feuilles ${idsSheets}`)
 
   const idsSheetsCreate = []
   const updateConfig = []
