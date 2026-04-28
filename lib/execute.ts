@@ -231,7 +231,6 @@ const extraction = async ({ log }: XlsxProcessingContext, tmpFile : string) => {
       await log.info(`Feuille ${sheet.id} - ${sheet.name} - ${sheet.actualRowCount - 1} lignes`)
       sheetsList[sheet.id] = { name: sheet.name, featureCount: sheet.actualRowCount - 1 }
     }
-    console.log('Itération ' + sheet.id, sheetsList)
   }
 
   return sheetsList
