@@ -59,6 +59,8 @@ let nbFinalize = 0
  * @param opts.checkDraft       When true, a draft state on the journal triggers a schema-
  *                              incompatibility warning instead of the success message
  *                              (used by update flows).
+ * @param progressInfo.name     Name of the corresponding task log
+ * @param progressInfo.total    Total number of pending datasets
  * @returns A `PendingFinalization` whose `promise` settles once the event arrives,
  *          the run is stopped, the wait times out, or fails — never rejects.
  */
