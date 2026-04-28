@@ -39,6 +39,8 @@ type PendingFinalization = {
   datasetTitle: string
 }
 
+let nbFinalize = 0
+
 /**
  * Starts listening for the `finalize-end` journal event of a dataset without blocking.
  *
@@ -51,14 +53,14 @@ type PendingFinalization = {
  * wait also races against the module-level `stopSignal`, so a `stop()` triggers an
  * immediate bail-out without waiting for the journal timeout.
  *
- * @param ws            Data Fair WebSocket client used to receive journal events.
- * @param log           Log system displayed in the user interface.
- * @param datasetId     Id of the dataset whose finalization should be awaited.
- * @param datasetTitle  Human-readable dataset title, used in log messages.
- * @param opts.successMessage  Message logged when the finalization succeeds.
- * @param opts.checkDraft      When true, a draft state on the journal triggers a schema-
- *                             incompatibility warning instead of the success message
- *                             (used by update flows).
+ * @param ws                    Data Fair WebSocket client used to receive journal events.
+ * @param log                   Log system displayed in the user interface.
+ * @param datasetId             Id of the dataset whose finalization should be awaited.
+ * @param datasetTitle          Human-readable dataset title, used in log messages.
+ * @param opts.successMessage   Message logged when the finalization succeeds.
+ * @param opts.checkDraft       When true, a draft state on the journal triggers a schema-
+ *                              incompatibility warning instead of the success message
+ *                              (used by update flows).
  * @returns A `PendingFinalization` whose `promise` settles once the event arrives,
  *          the run is stopped, the wait times out, or fails — never rejects.
  */
@@ -67,8 +69,9 @@ const trackFinalization = (
   log: XlsxProcessingContext['log'],
   datasetId: string,
   datasetTitle: string,
-  opts: { successMessage: string, checkDraft?: boolean }
-): PendingFinalization => {
+  opts: { successMessage: string, checkDraft?: boolean },
+  progressInfo: { name: string, total: number }
+):PendingFinalization => {
   const journalPromise = ws.waitForJournal(datasetId, 'finalize-end')
     .then(journal => ({ kind: 'event' as const, journal }))
   const stopPromise = stopSignal.then(() => ({ kind: 'stopped' as const }))
@@ -80,15 +83,19 @@ const trackFinalization = (
       }
       const journal: any = result.journal
       if (opts.checkDraft && (journal.draft !== undefined || journal.draft)) {
-        await log.warning(`Le jeu de données "${datasetTitle}" : les schémas ne sont pas compatibles. Le jeu est passé en mode brouillon, à vous de le valider ou non.`)
+        await log.warning(`Le schéma du jeu de données "${datasetTitle}" n'est pas compatible avec la couche . Le jeu est passé en mode brouillon, à vous de le valider ou non.`)
       } else {
-        await log.info(`${opts.successMessage} : "${datasetTitle}"`)
+        await log.info(`Le jeu de données "${datasetTitle}" ${opts.successMessage}`)
       }
       return { ok: true as const, journal }
     })
     .catch(async (error: Error) => {
       await log.warning(`Le jeu de données "${datasetTitle}" n'a pas pu être finalisé (${error.message}), vous pouvez relancer son traitement.`)
       return { ok: false as const, error }
+    })
+    .finally(async () => {
+      nbFinalize += 1
+      await log.progress(progressInfo.name, nbFinalize, progressInfo.total)
     })
   return { promise, datasetId, datasetTitle }
 }
@@ -251,12 +258,13 @@ const createDatasets = async ({ processingConfig: rawConfig, axios, tmpDir, log,
 
   // If there are no sheets to extract, we stop here to simplify the display of logs on the interface.
   if (!processingConfig.idsSheets || processingConfig.idsSheets.length <= 0) {
-    await log.info('Pas de feuilles renseignées')
+    await log.warning('Pas de feuilles renseignées')
     return
   }
 
   const updateConfig = []
   const pendingFinalizations: PendingFinalization[] = []
+  const progressName = 'En attente de la finalisation de la création des jeux de données'
 
   for (const idSheet of processingConfig.idsSheets) {
     if (shouldBeStopped) return
@@ -288,7 +296,8 @@ const createDatasets = async ({ processingConfig: rawConfig, axios, tmpDir, log,
       })).data
       await log.info(`   Jeu de données créé, id="${dataset.id}", titre="${dataset.title}"`)
 
-      pendingFinalizations.push(trackFinalization(ws, log, dataset.id, dataset.title, { successMessage: 'Jeu de données finalisé' }))
+      pendingFinalizations.push(trackFinalization(ws, log, dataset.id, dataset.title, { successMessage: 'a été finalisé' },
+        { name: progressName, total: processingConfig.idsSheets.length }))
 
       const datasetObject = { id: dataset.id, href: dataset.href, title: dataset.title }
       const updateObject = { dataset: datasetObject, idSheet }
@@ -299,6 +308,10 @@ const createDatasets = async ({ processingConfig: rawConfig, axios, tmpDir, log,
 
   if (pendingFinalizations.length > 0) {
     await log.step('Finalisation des jeux de données')
+
+    await log.task(progressName)
+    await log.progress(progressName, 0, processingConfig.idsSheets.length)
+
     await Promise.allSettled(pendingFinalizations.map(p => p.promise))
   }
 
@@ -323,7 +336,7 @@ const updateDatasets = async ({ processingConfig: rawConfig, axios, tmpDir, log,
 
   // If there are no updates to extract, we stop here to simplify the display of logs on the interface.
   if (!processingConfig.datasets || processingConfig.datasets.length <= 0) {
-    await log.info('Pas de mises à jour renseignées')
+    await log.warning('Pas de mises à jour renseignées')
     return
   }
 
@@ -336,6 +349,7 @@ const updateDatasets = async ({ processingConfig: rawConfig, axios, tmpDir, log,
   const datasetsIds = new Set<string>(datasets.map(d => d.id))
 
   const pendingFinalizations: PendingFinalization[] = []
+  const progressName = 'En attente de la finalisation de la mise à jour des jeux de données'
 
   // We process each dataset to be updated
   for (const update of processingConfig.datasets) {
@@ -391,13 +405,19 @@ const updateDatasets = async ({ processingConfig: rawConfig, axios, tmpDir, log,
       headers: { ...formData.getHeaders(), 'content-length': contentLength }
     })
 
-    pendingFinalizations.push(trackFinalization(ws, log, dataset.id, dataset.title, { successMessage: 'Mise à jour terminée', checkDraft: true }))
+    pendingFinalizations.push(trackFinalization(ws, log, dataset.id, dataset.title, { successMessage: 'a été mis à jour', checkDraft: true },
+      { name: progressName, total: processingConfig.datasets.length }
+    ))
 
     await log.info('')
   }
 
   if (pendingFinalizations.length > 0) {
     await log.step('Finalisation des mises à jour')
+
+    await log.task(progressName)
+    await log.progress(progressName, 0, processingConfig.datasets.length)
+
     await Promise.allSettled(pendingFinalizations.map(p => p.promise))
   }
 }
