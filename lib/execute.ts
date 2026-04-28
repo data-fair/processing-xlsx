@@ -1,5 +1,5 @@
 import type { RunFunction } from '@data-fair/lib-common-types/processings.js'
-import type { ProcessingConfig, CreateDatasets, UpdateDatasets } from '#types/processingConfig/index.ts'
+import type { ProcessingConfig, CreateDatasets, UpdateDatasets, Parameters } from '#types/processingConfig/index.ts'
 import { formatBytes } from '@data-fair/lib-utils/format/bytes.js'
 
 import util from 'util'
@@ -249,7 +249,7 @@ const extraction = async ({ log }: XlsxProcessingContext, tmpFile : string) => {
  */
 const createDatasets = async ({ processingConfig: rawConfig, axios, tmpDir, log, ws } : XlsxProcessingContext, sheetsList: SheetsList, tmpFile: string) => {
   // Narrow the union type to the create-mode branch (caller guarantees datasetMode === 'create').
-  const processingConfig = rawConfig as CreateDatasets & { idsSheets?: number[] }
+  const processingConfig = rawConfig as CreateDatasets & Parameters
   await log.step('Construction des jeux de données')
 
   let idsSheets: number[] = []
@@ -258,7 +258,31 @@ const createDatasets = async ({ processingConfig: rawConfig, axios, tmpDir, log,
   if (processingConfig.addAllSheets) {
     idsSheets = Object.keys(sheetsList).map(sheet => Number(sheet))
   } else {
-    idsSheets = processingConfig.idsSheets ?? []
+    processingConfig.listIdsSheets = processingConfig.listIdsSheets ? processingConfig.listIdsSheets.replaceAll(' ', '') : ''
+
+    const listParts = processingConfig.listIdsSheets.split(',')
+
+    for (const part of listParts) {
+      const idSheet = Number(part)
+      console.log('Feuille : ', idSheet)
+
+      if (idSheet && idSheet > 0) {
+        idsSheets.push(idSheet)
+      } else {
+        const interval = part.split('-')
+
+        if (interval.length === 2) {
+          const start = Number(interval[0])
+          const end = Number(interval[1])
+
+          if (start && start > 0 && end && end >= start) {
+            for (let id = start; id <= end; id++) {
+              idsSheets.push(id)
+            }
+          }
+        }
+      }
+    }
   }
 
   // If there are no sheets to extract, we stop here to simplify the display of logs on the interface.
@@ -266,6 +290,8 @@ const createDatasets = async ({ processingConfig: rawConfig, axios, tmpDir, log,
     await log.warning('Pas de feuilles renseignées')
     return
   }
+
+  await log.info(`Extraction des couches ${idsSheets}`)
 
   const idsSheetsCreate = []
   const updateConfig = []
