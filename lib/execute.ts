@@ -264,7 +264,6 @@ const createDatasets = async ({ processingConfig: rawConfig, axios, tmpDir, log,
 
     for (const part of listParts) {
       const idSheet = Number(part)
-      console.log('Feuille : ', idSheet)
 
       if (idSheet && idSheet > 0) {
         idsSheets.push(idSheet)
