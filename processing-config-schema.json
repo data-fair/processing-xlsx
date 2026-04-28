@@ -156,6 +156,14 @@
           "description": "Supported protocols are HTTP and HTTPS; supported formats are .zip and .xlsx.",
           "x-i18n-description": { "fr": "Les protocoles supportés sont HTTP et HTTPS, les formats supportés sont .zip et .xlsx.", "en": "Supported protocols are HTTP and HTTPS; supported formats are .zip and .xlsx." }
         },
+        "addAllSheets": {
+          "type": "boolean",
+          "title": "Add all the sheets",
+          "x-i18n-title": { "fr": "Ajouter toutes les feuilles", "en": "Add all the sheets" },
+          "layout": {
+            "if": "parent.parent.data.datasetMode === 'create'"
+          }
+        },
         "idsSheets": {
           "type": "array",
           "title": "Sheets to extract",
@@ -167,7 +175,7 @@
           "description": "The numbers correspond to the indexes of the sheets to extract.",
           "x-i18n-description": { "fr": "Les nombres à indiquer correspondent aux numéros des feuilles à extraire.", "en": "The numbers correspond to the indexes of the sheets to extract." },
           "layout": {
-            "if": "parent.parent.data.datasetMode === 'create'"
+            "if": "parent.parent.data.datasetMode === 'create' && parent.data.addAllSheets === false"
           }
         }
       }

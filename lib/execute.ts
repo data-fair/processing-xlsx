@@ -29,9 +29,7 @@ export const stop: () => Promise<void> = async () => {
   resolveStop()
 }
 
-type SheetsList = {
-  [idSheet: number]: { name: string, featureCount: number }
-}
+type SheetsList = Record<number, { name: string, featureCount: number }>
 
 type PendingFinalization = {
   promise: Promise<{ ok: true, journal: any } | { ok: false, error: Error }>
@@ -71,7 +69,7 @@ const trackFinalization = (
   datasetTitle: string,
   opts: { successMessage: string, checkDraft?: boolean },
   progressInfo: { name: string, total: number }
-):PendingFinalization => {
+): PendingFinalization => {
   const journalPromise = ws.waitForJournal(datasetId, 'finalize-end')
     .then(journal => ({ kind: 'event' as const, journal }))
   const stopPromise = stopSignal.then(() => ({ kind: 'stopped' as const }))
@@ -224,17 +222,16 @@ const extraction = async ({ log }: XlsxProcessingContext, tmpFile : string) => {
   const workbook = new Excel.Workbook()
   await workbook.xlsx.readFile(tmpFile)
 
-  const sheetsList: SheetsList = []
+  const sheetsList: SheetsList = {}
 
   for (const sheet of workbook.worksheets) {
-    // await log.info(`${sheet.columns}`)
-
     if (sheet.columnCount <= 0) {
       await log.warning(`Feuille ${sheet.id} - ${sheet.name} - Pas d'attributs, INUTILISABLE`)
     } else {
       await log.info(`Feuille ${sheet.id} - ${sheet.name} - ${sheet.actualRowCount - 1} lignes`)
       sheetsList[sheet.id] = { name: sheet.name, featureCount: sheet.actualRowCount - 1 }
     }
+    console.log('Itération ' + sheet.id, sheetsList)
   }
 
   return sheetsList
@@ -256,53 +253,70 @@ const createDatasets = async ({ processingConfig: rawConfig, axios, tmpDir, log,
   const processingConfig = rawConfig as CreateDatasets & { idsSheets?: number[] }
   await log.step('Construction des jeux de données')
 
+  let idsSheets: number[] = []
+
+  // If we want to add all the sheets, we add all the identifiers to the list.
+  if (processingConfig.addAllSheets) {
+    idsSheets = Object.keys(sheetsList).map(sheet => Number(sheet))
+  } else {
+    idsSheets = processingConfig.idsSheets ?? []
+  }
+
   // If there are no sheets to extract, we stop here to simplify the display of logs on the interface.
-  if (!processingConfig.idsSheets || processingConfig.idsSheets.length <= 0) {
+  if (idsSheets.length <= 0) {
     await log.warning('Pas de feuilles renseignées')
     return
   }
 
+  const idsSheetsCreate = []
   const updateConfig = []
   const pendingFinalizations: PendingFinalization[] = []
   const progressName = 'En attente de la finalisation de la création des jeux de données'
 
-  for (const idSheet of processingConfig.idsSheets) {
-    if (shouldBeStopped) return
-
+  // Checking the availability of the sheets
+  for (const idSheet of idsSheets) {
     if (!(idSheet in sheetsList)) {
       await log.warning(`La feuille ${idSheet} n'est pas présente dans les feuilles disponibles`)
     } else {
-      await log.info(`Création du jeu de données pour la feuille ${idSheet} - ${sheetsList[idSheet].name}`)
-
-      const tmpFileXLSX = await createTmpFile(tmpDir, tmpFile, sheetsList[idSheet].name, log, () => shouldBeStopped)
-      if (!tmpFileXLSX) return
-
-      const formData = new FormData()
-      formData.append('title', `${processingConfig.dataset.prefix} - ${sheetsList[idSheet].name}`)
-      formData.append('file', await fs.createReadStream(tmpFileXLSX), { filename: path.parse(tmpFileXLSX).base })
-      const getLength = util.promisify(formData.getLength.bind(formData))
-      const contentLength = await getLength()
-      await log.info(`Chargement de ${formatBytes(contentLength)}`)
-
-      if (shouldBeStopped) return
-
-      const dataset = (await axios({
-        method: 'post',
-        url: 'api/v1/datasets',
-        data: formData,
-        maxContentLength: Infinity,
-        maxBodyLength: Infinity,
-        headers: { ...formData.getHeaders(), 'content-length': contentLength }
-      })).data
-      await log.info(`   Jeu de données créé, id="${dataset.id}", titre="${dataset.title}"`)
-
-      pendingFinalizations.push(trackFinalization(ws, log, dataset.id, dataset.title, { successMessage: 'a été finalisé' },
-        { name: progressName, total: processingConfig.idsSheets.length }))
-
-      const datasetObject = { id: dataset.id, href: dataset.href, title: dataset.title }
-      const updateObject = { dataset: datasetObject, idSheet }
-      updateConfig.push(updateObject)
+      idsSheetsCreate.push(idSheet)
     }
+  }
+  await log.info('')
+
+  for (const idSheet of idsSheetsCreate) {
+    if (shouldBeStopped) return
+
+    await log.info(`Création du jeu de données pour la feuille ${idSheet} - ${sheetsList[idSheet].name}`)
+
+    const tmpFileXLSX = await createTmpFile(tmpDir, tmpFile, sheetsList[idSheet].name, log, () => shouldBeStopped)
+    if (!tmpFileXLSX) return
+
+    const formData = new FormData()
+    formData.append('title', `${processingConfig.dataset.prefix} - ${sheetsList[idSheet].name}`)
+    formData.append('file', await fs.createReadStream(tmpFileXLSX), { filename: path.parse(tmpFileXLSX).base })
+    const getLength = util.promisify(formData.getLength.bind(formData))
+    const contentLength = await getLength()
+    await log.info(`Chargement de ${formatBytes(contentLength)}`)
+
+    if (shouldBeStopped) return
+
+    const dataset = (await axios({
+      method: 'post',
+      url: 'api/v1/datasets',
+      data: formData,
+      maxContentLength: Infinity,
+      maxBodyLength: Infinity,
+      headers: { ...formData.getHeaders(), 'content-length': contentLength }
+    })).data
+    await log.info(`   Jeu de données créé, id="${dataset.id}", titre="${dataset.title}"`)
+
+    pendingFinalizations.push(trackFinalization(ws, log, dataset.id, dataset.title, { successMessage: 'a été finalisé' },
+      { name: progressName, total: idsSheetsCreate.length }))
+
+    const datasetObject = { id: dataset.id, href: dataset.href, title: dataset.title }
+    const updateObject = { dataset: datasetObject, idSheet }
+    updateConfig.push(updateObject)
+
     await log.info('')
   }
 
@@ -310,7 +324,7 @@ const createDatasets = async ({ processingConfig: rawConfig, axios, tmpDir, log,
     await log.step('Finalisation des jeux de données')
 
     await log.task(progressName)
-    await log.progress(progressName, 0, processingConfig.idsSheets.length)
+    await log.progress(progressName, nbFinalize, idsSheetsCreate.length)
 
     await Promise.allSettled(pendingFinalizations.map(p => p.promise))
   }
@@ -348,11 +362,36 @@ const updateDatasets = async ({ processingConfig: rawConfig, axios, tmpDir, log,
   const datasets = (await axios.get<{ results: { id: string }[] }>('api/v1/datasets/?size=10000&file=true')).data.results
   const datasetsIds = new Set<string>(datasets.map(d => d.id))
 
+  const datasetsUpdate = []
+  // Checking the availability of the sheets and the datasets
+  for (const update of processingConfig.datasets) {
+    if (!update.dataset.id || !update.dataset.title) {
+      await log.warning('Le jeu de données est incomplet (id ou titre manquant)')
+      await log.info('')
+      continue
+    }
+
+    // Check if the sheet is available
+    if (!(update.idSheet in sheetsList)) {
+      await log.warning(`La feuille ${update.idSheet} n'est pas présente dans les feuilles disponibles`)
+      await log.info('')
+      continue
+    }
+
+    // Check if the correct update operation can be performed, to avoid permission errors
+    if (!(datasetsIds.has(update.dataset.id))) {
+      await log.warning(`Le jeu de données ${update.dataset.title} n'est pas de type fichier`)
+      await log.info('')
+      continue
+    }
+    datasetsUpdate.push(update)
+  }
+
   const pendingFinalizations: PendingFinalization[] = []
   const progressName = 'En attente de la finalisation de la mise à jour des jeux de données'
 
   // We process each dataset to be updated
-  for (const update of processingConfig.datasets) {
+  for (const update of datasetsUpdate) {
     if (shouldBeStopped) return
 
     const dataset = update.dataset
@@ -360,26 +399,6 @@ const updateDatasets = async ({ processingConfig: rawConfig, axios, tmpDir, log,
     const formData = new FormData()
 
     await log.info(`Mise à jour du jeu ${dataset.title} avec la feuille ${idSheet}`)
-
-    if (!dataset.id || !dataset.title) {
-      await log.warning('Le jeu de données est incomplet (id ou titre manquant)')
-      await log.info('')
-      continue
-    }
-
-    // Check if the sheet is available
-    if (!(idSheet in sheetsList)) {
-      await log.warning(`La feuille ${idSheet} n'est pas présente dans les feuilles disponibles`)
-      await log.info('')
-      continue
-    }
-
-    // Check if the correct update operation can be performed, to avoid permission errors
-    if (!(datasetsIds.has(dataset.id))) {
-      await log.warning(`Le jeu de données ${dataset.title} n'est pas de type fichier`)
-      await log.info('')
-      continue
-    }
 
     if (shouldBeStopped) return
 
@@ -405,8 +424,9 @@ const updateDatasets = async ({ processingConfig: rawConfig, axios, tmpDir, log,
       headers: { ...formData.getHeaders(), 'content-length': contentLength }
     })
 
-    pendingFinalizations.push(trackFinalization(ws, log, dataset.id, dataset.title, { successMessage: 'a été mis à jour', checkDraft: true },
-      { name: progressName, total: processingConfig.datasets.length }
+    // We are certain of the ID and title definitions with the previous check.
+    pendingFinalizations.push(trackFinalization(ws, log, dataset.id!, dataset.title!, { successMessage: 'a été mis à jour', checkDraft: true },
+      { name: progressName, total: datasetsUpdate.length }
     ))
 
     await log.info('')
@@ -416,7 +436,7 @@ const updateDatasets = async ({ processingConfig: rawConfig, axios, tmpDir, log,
     await log.step('Finalisation des mises à jour')
 
     await log.task(progressName)
-    await log.progress(progressName, 0, processingConfig.datasets.length)
+    await log.progress(progressName, 0, datasetsUpdate.length)
 
     await Promise.allSettled(pendingFinalizations.map(p => p.promise))
   }
