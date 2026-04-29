@@ -25,14 +25,19 @@ For this mode, you only need to enter the URL.
 
 | Tab | Field | Description |
 | --- | ----- | ----------- |
-| Liste de jeux de données | `prefix` | This corresponds to the title of the datasets to be created. The datasets are named according to this prefix and the name of the corresponding sheet |
-| Paramètres | `idsSheets` | Identifier of the sheets to extract to create datasets |
+| Datasets | `prefix` | This corresponds to the title of the datasets to be created. The datasets are named according to this prefix and the name of the corresponding sheet |
+| Parameters | `addAllSheets` | Allows you to build datasets directly for all sheets in the file |
+| Parameters | `listIdsSheets` | Identifier of the sheets to extract to create datasets |
 
 ### update
 
 | Tab | Field | Description |
 | --- | ----- | ----------- |
-| Liste de jeux de données | `datasets` | List of datasets to be updated, taking into account the sheet number and the schema update forcing |
-| Liste de jeux de données - Jeux à mettre à jour | `dataset` | Name of the dataset to update, selectable from the list of available datasets |
-| Liste de jeux de données - Jeux à mettre à jour | `idSheet` | Sheet number used to update the corresponding dataset |
-| Liste de jeux de données - Jeux à mettre à jour | `forceUpdate` | Indicates whether the scheme update should also be forced |
+| Datasets | `datasets` | List of datasets to be updated, taking into account the sheet number and the schema update forcing |
+| Datasets - Jeux à mettre à jour | `dataset` | Name of the dataset to update, selectable from the list of available datasets |
+| Datasets - Jeux à mettre à jour | `idSheet` | Sheet number used to update the corresponding dataset |
+| Datasets - Jeux à mettre à jour | `forceUpdate` | Indicates whether the scheme update should also be forced |
+
+## Warning
+
+Be careful when fixing dependencies. The project uses ExcelJS **version 4.4.0**. The `npm audit fix` command may downgrade this library, which will definitely crash the processing.
