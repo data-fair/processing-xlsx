@@ -34,9 +34,9 @@ For this mode, you only need to enter the URL.
 | Tab | Field | Description |
 | --- | ----- | ----------- |
 | Datasets | `datasets` | List of datasets to be updated, taking into account the sheet number and the schema update forcing |
-| Datasets - Jeux à mettre à jour | `dataset` | Name of the dataset to update, selectable from the list of available datasets |
-| Datasets - Jeux à mettre à jour | `idSheet` | Sheet number used to update the corresponding dataset |
-| Datasets - Jeux à mettre à jour | `forceUpdate` | Indicates whether the scheme update should also be forced |
+| Datasets - Datasets to update | `dataset` | Name of the dataset to update, selectable from the list of available datasets |
+| Datasets - Datasets to update | `idSheet` | Sheet number used to update the corresponding dataset |
+| Datasets - Datasets to update | `forceUpdate` | Indicates whether the scheme update should also be forced |
 
 ## Warning
 
