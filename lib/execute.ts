@@ -8,7 +8,7 @@ import path from 'path'
 import Excel from 'exceljs'
 import FormData from 'form-data'
 
-import type { XlsxProcessingContext } from './context.ts'
+import type { SpreadsheetProcessingContext } from './context.ts'
 import { fetchHTTP } from './fetch.ts'
 import { createTmpFile } from './tmp-file.ts'
 import { runCommand } from './spawn-process.ts'
@@ -65,8 +65,8 @@ let nbFinalize = 0
  *          the run is stopped, the wait times out, or fails — never rejects.
  */
 const trackFinalization = (
-  ws: XlsxProcessingContext['ws'],
-  log: XlsxProcessingContext['log'],
+  ws: SpreadsheetProcessingContext['ws'],
+  log: SpreadsheetProcessingContext['log'],
   datasetId: string,
   datasetTitle: string,
   opts: { successMessage: string, checkDraft?: boolean },
@@ -149,7 +149,7 @@ export const run: RunFunction<ProcessingConfig> = async (context) => {
  * @param log               Log system that is displayed on the user interface
  * @returns Full path of the file to be processed
  */
-const download = async ({ processingConfig, tmpDir, axios, log } : XlsxProcessingContext) => {
+const download = async ({ processingConfig, tmpDir, axios, log } : SpreadsheetProcessingContext) => {
   await fs.ensureDir(tmpDir)
 
   await log.step('Téléchargement du fichier')
@@ -217,7 +217,7 @@ const download = async ({ processingConfig, tmpDir, axios, log } : XlsxProcessin
  * @param tmpFile   Full path of the file to be processed
  * @returns Dictionary of available sheet structures (id: {name, fields, featureCount})
  */
-const extraction = async ({ log }: XlsxProcessingContext, tmpFile : string) => {
+const extraction = async ({ log }: SpreadsheetProcessingContext, tmpFile : string) => {
   await log.step('Récupération de la structure des données')
 
   // Display sheets
@@ -249,7 +249,7 @@ const extraction = async ({ log }: XlsxProcessingContext, tmpFile : string) => {
  * @param tmpFile           Full path of the file to be processed
  * @returns   A list of objects associating sheets and datasets, or nothing at all to stop the program
  */
-const createDatasets = async ({ processingConfig: rawConfig, axios, tmpDir, log, ws } : XlsxProcessingContext, sheetsList: SheetsList, tmpFile: string) => {
+const createDatasets = async ({ processingConfig: rawConfig, axios, tmpDir, log, ws } : SpreadsheetProcessingContext, sheetsList: SheetsList, tmpFile: string) => {
   // Narrow the union type to the create-mode branch (caller guarantees datasetMode === 'create').
   const processingConfig = rawConfig as CreateDatasets & Parameters
   await log.step('Construction des jeux de données')
@@ -369,7 +369,7 @@ const createDatasets = async ({ processingConfig: rawConfig, axios, tmpDir, log,
  * @param tmpFile           Full path of the file to be processed
  * @returns   Returns nothing, used to stop the program
  */
-const updateDatasets = async ({ processingConfig: rawConfig, axios, tmpDir, log, ws } : XlsxProcessingContext, sheetsList: SheetsList, tmpFile: string) => {
+const updateDatasets = async ({ processingConfig: rawConfig, axios, tmpDir, log, ws } : SpreadsheetProcessingContext, sheetsList: SheetsList, tmpFile: string) => {
   // Narrow the union type to the update-mode branch (caller guarantees datasetMode === 'update').
   const processingConfig = rawConfig as UpdateDatasets
   await log.step('Mise à jour des jeux de données')

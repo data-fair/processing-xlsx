@@ -4,7 +4,7 @@ import type { AxiosRequestConfig } from 'axios'
 import fs from 'fs-extra'
 import path from 'path'
 
-import type { XlsxProcessingContext } from './context.ts'
+import type { SpreadsheetProcessingContext } from './context.ts'
 
 /**
  * Allows you to download a file using the HTTP protocol
@@ -13,7 +13,7 @@ import type { XlsxProcessingContext } from './context.ts'
  * @param axios             Server for API requests
  * @returns Name of extracted file
  */
-export const fetchHTTP = async (processingConfig: XlsxProcessingContext['processingConfig'], tmpFile: string, axios: XlsxProcessingContext['axios']) => {
+export const fetchHTTP = async (processingConfig: SpreadsheetProcessingContext['processingConfig'], tmpFile: string, axios: SpreadsheetProcessingContext['axios']) => {
   const opts: AxiosRequestConfig = { responseType: 'stream', maxRedirects: 4 }
 
   // File retrieval and download

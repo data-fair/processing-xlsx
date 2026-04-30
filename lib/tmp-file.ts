@@ -2,7 +2,7 @@ import fs from 'fs-extra'
 import path from 'path'
 import Excel from 'exceljs'
 
-import type { XlsxProcessingContext } from './context.ts'
+import type { SpreadsheetProcessingContext } from './context.ts'
 
 type NamedWorksheetReader = Excel.stream.xlsx.WorksheetReader & { name: string, destroy: () => void }
 
@@ -15,7 +15,7 @@ type NamedWorksheetReader = Excel.stream.xlsx.WorksheetReader & { name: string, 
  * @param isStopped   Function allowing the program to stop if requested
  * @returns   Name of the temporary file created to send
  */
-export const createTmpFile = async (dir : string, tmpFile : string, sheetName : string, log: XlsxProcessingContext['log'], isStopped: () => boolean) => {
+export const createTmpFile = async (dir : string, tmpFile : string, sheetName : string, log: SpreadsheetProcessingContext['log'], isStopped: () => boolean) => {
   const tmpFileXLSX = path.join(dir, `${sheetName}.xlsx`)
 
   if (await fs.pathExists(tmpFileXLSX)) return tmpFileXLSX
